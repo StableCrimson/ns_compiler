@@ -1,0 +1,7 @@
+writing-a-c-compiler-tests/
+custom/
+ns_compiler
+
+# Ignore all test C code and emitted assembly
+*.c
+*.asm

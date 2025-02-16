@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "arch": "arch -x86_64 zsh",
+    "build": "deno compile --allow-read --allow-write main.ts"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1"
+  }
+}
