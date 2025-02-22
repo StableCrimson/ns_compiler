@@ -35,6 +35,9 @@ export enum TokenType {
   Double,
   Signed,
   Unsigned,
+  Tilde,
+  Minus,
+  Decrement,
   EOF,
 }
 
@@ -160,6 +163,27 @@ export function tokenize(input: string): Token[] {
       continue;
     }
 
+    if (sourceCode[0] === "~") {
+      const token = { type: TokenType.Tilde, value: "~" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "-") {
+      // TODO: Not supported yet
+      if (sourceCode[1] === "-") {
+        const token = { type: TokenType.Decrement, value: "--" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+
+      const token = { type: TokenType.Minus, value: "-" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
     // We weren't able to match the current token, bail
     console.error("Unexpected token: " + sourceCode);
     Deno.exit(1);

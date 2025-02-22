@@ -1,4 +1,4 @@
-import { tokenize, TokenType, Token } from "./tokenizer.ts";
+import { Token, tokenize, TokenType } from "./tokenizer.ts";
 
 export type NodeType =
   | "Program"
@@ -6,8 +6,14 @@ export type NodeType =
   | "Statement"
   | "Identifier"
   | "Expr"
+  | "UnaryExpr"
   | "Return"
   | "NumLiteral";
+
+export enum UnaryOperator {
+  Complement = "~",
+  Negation = "-",
+}
 
 interface AstNode {
   kind: NodeType;
@@ -21,7 +27,6 @@ export interface Program extends AstNode {
 export interface Function extends AstNode {
   kind: "Function";
   symbol: string;
-  // NOTE: This should be an array of statements
   body: Statement[];
 }
 
@@ -29,13 +34,19 @@ export interface Statement extends AstNode {
   kind: NodeType;
 }
 
-interface Expr extends AstNode {
+export interface Expr extends AstNode {
   kind: NodeType;
 }
 
 export interface NumLiteral extends Expr {
   kind: "NumLiteral";
   value: number;
+}
+
+export interface UnaryExpr extends Expr {
+  kind: "UnaryExpr";
+  operator: UnaryOperator;
+  expr: Expr;
 }
 
 export interface ReturnStatement extends Statement {
@@ -106,12 +117,13 @@ export class Parser {
     const type = this.peek().type;
 
     switch (type) {
-      case TokenType.Return:
+      case TokenType.Return: {
         this.consume();
         const expr = this.parseExpr();
         this.expect(TokenType.Semicolon);
         return { kind: "Return", value: expr } as ReturnStatement;
-      case TokenType.If:
+      }
+      case TokenType.If: {
         this.consume();
         this.expect(TokenType.OpenParenthesis);
         const condition = this.parseExpr();
@@ -128,6 +140,7 @@ export class Parser {
         }
 
         return { condition, thenBranch, elseBranch } as IfStatement;
+      }
       default:
         console.error("Unknown statement type", type);
         Deno.exit(1);
@@ -138,8 +151,46 @@ export class Parser {
   }
 
   private parseExpr(): Expr {
-    // TODO: Later
-    const expr = this.expect(TokenType.Constant);
-    return { kind: "NumLiteral", value: parseInt(expr.value) } as NumLiteral;
+    const type = this.peek().type;
+    switch (type) {
+      case TokenType.Constant: {
+        const expr = this.consume();
+
+        return {
+          kind: "NumLiteral",
+          value: parseInt(expr.value),
+        } as NumLiteral;
+      }
+      case TokenType.OpenParenthesis: {
+        this.consume();
+        const expr = this.parseExpr();
+        this.expect(TokenType.CloseParenthesis);
+        return expr;
+      }
+      case TokenType.Minus: {
+        this.consume();
+        const expr = this.parseExpr();
+        return {
+          kind: "UnaryExpr",
+          operator: UnaryOperator.Negation,
+          expr,
+        } as UnaryExpr;
+      }
+      case TokenType.Tilde: {
+        this.consume();
+        const expr = this.parseExpr();
+        return {
+          kind: "UnaryExpr",
+          operator: UnaryOperator.Complement,
+          expr,
+        } as UnaryExpr;
+      }
+      default:
+        console.error("Unknown expression type", type);
+        Deno.exit(1);
+    }
+
+    // NOTE: Unreachable, just to make the TS compiler happy
+    return {} as Expr;
   }
 }
