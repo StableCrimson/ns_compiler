@@ -3,7 +3,12 @@ import { BinaryOperator, UnaryOperator } from "./parser.ts";
 import {
   TasBinary,
   TasConstant,
+  TasCopy,
   TasFunction,
+  TasJump,
+  TasJumpIfNotZero,
+  TasJumpIfZero,
+  TasLabel,
   TasProgram,
   TasReturn,
   TasUnary,
@@ -18,11 +23,25 @@ export enum Register {
   R11 = "r11d",
 }
 
+enum ConditionFlags {
+  E = "e",
+  NE = "ne",
+  G = "g",
+  GE = "ge",
+  L = "l",
+  LE = "le",
+}
+
 type AsmInstructionKind =
   | "Mov"
   | "Ret"
   | "Idiv"
   | "Cdq"
+  | "Cmp"
+  | "Jmp"
+  | "JmpCC"
+  | "SetCC"
+  | "Label"
   | "BinaryOperation"
   | "UnaryOperation"
   | "AllocateStack";
@@ -83,6 +102,34 @@ export interface Cdq extends AsmInstruction {
   kind: "Cdq";
 }
 
+export interface Label extends AsmInstruction {
+  kind: "Label";
+  symbol: string;
+}
+
+export interface Jmp extends AsmInstruction {
+  kind: "Jmp";
+  label: string;
+}
+
+export interface JmpCC extends AsmInstruction {
+  kind: "JmpCC";
+  condition: ConditionFlags;
+  label: string;
+}
+
+export interface SetCC extends AsmInstruction {
+  kind: "SetCC";
+  condition: ConditionFlags;
+  operand: AsmOperand;
+}
+
+export interface Cmp extends AsmInstruction {
+  kind: "Cmp";
+  a: AsmOperand;
+  b: AsmOperand;
+}
+
 export interface AsmOperand extends AsmConstruct {
   kind: AsmOperandKind;
 }
@@ -138,6 +185,26 @@ function generateFunction(functionNode: TasFunction): AsmFunction {
     switch (instruction.kind) {
       case "UnaryOperation": {
         const ins = instruction as TasUnary;
+
+        if (ins.operator == UnaryOperator.Not) {
+          asmFunc.instructions.push({
+            kind: "Cmp",
+            a: { kind: "Imm", value: 0 } as Imm,
+            b: getOperand(ins.source),
+          } as Cmp);
+          asmFunc.instructions.push({
+            kind: "Mov",
+            source: { kind: "Imm", value: 0 } as Imm,
+            destination: getOperand(ins.destination),
+          } as Mov);
+          asmFunc.instructions.push({
+            kind: "SetCC",
+            condition: ConditionFlags.E,
+            operand: getOperand(ins.destination),
+          } as SetCC);
+          continue;
+        }
+
         asmFunc.instructions.push({
           kind: "Mov",
           source: getOperand(ins.source),
@@ -162,6 +229,27 @@ function generateFunction(functionNode: TasFunction): AsmFunction {
           continue;
         }
 
+        const comparisonFlags = getComparisonFlags(ins);
+        if (comparisonFlags) {
+          // Operands are backwards on purpose :)
+          asmFunc.instructions.push({
+            kind: "Cmp",
+            a: getOperand(ins.source2),
+            b: getOperand(ins.source1),
+          } as Cmp);
+          asmFunc.instructions.push({
+            kind: "Mov",
+            source: { kind: "Imm", value: 0 } as Imm,
+            destination: getOperand(ins.destination),
+          } as Mov);
+          asmFunc.instructions.push({
+            kind: "SetCC",
+            condition: comparisonFlags,
+            operand: getOperand(ins.destination),
+          } as SetCC);
+          continue;
+        }
+
         asmFunc.instructions.push({
           kind: "Mov",
           source: getOperand(ins.source1),
@@ -173,6 +261,59 @@ function generateFunction(functionNode: TasFunction): AsmFunction {
           operand1: getOperand(ins.source2),
           operand2: getOperand(ins.destination),
         } as BinaryOperation);
+        continue;
+      }
+      case "Jump": {
+        const ins = instruction as TasJump;
+        asmFunc.instructions.push({
+          kind: "Jmp",
+          label: ins.label.symbol,
+        } as Jmp);
+        continue;
+      }
+      case "JumpIfZero": {
+        const ins = instruction as TasJumpIfZero;
+        asmFunc.instructions.push({
+          kind: "Cmp",
+          a: { kind: "Imm", value: 0 } as Imm,
+          b: getOperand(ins.condition),
+        } as Cmp);
+        asmFunc.instructions.push({
+          kind: "JmpCC",
+          condition: ConditionFlags.E,
+          label: ins.label.symbol,
+        } as JmpCC);
+        continue;
+      }
+      case "JumpIfNotZero": {
+        const ins = instruction as TasJumpIfNotZero;
+        asmFunc.instructions.push({
+          kind: "Cmp",
+          a: { kind: "Imm", value: 0 } as Imm,
+          b: getOperand(ins.condition),
+        } as Cmp);
+        asmFunc.instructions.push({
+          kind: "JmpCC",
+          condition: ConditionFlags.NE,
+          label: ins.label.symbol,
+        } as JmpCC);
+        continue;
+      }
+      case "Label": {
+        const ins = instruction as TasLabel;
+        asmFunc.instructions.push({
+          kind: "Label",
+          symbol: ins.symbol,
+        } as Label);
+        continue;
+      }
+      case "Copy": {
+        const ins = instruction as TasCopy;
+        asmFunc.instructions.push({
+          kind: "Mov",
+          source: getOperand(ins.source),
+          destination: getOperand(ins.destination),
+        } as Mov);
         continue;
       }
       case "Return": {
@@ -292,6 +433,7 @@ function replacePseudoregisters(asmFunc: AsmFunction) {
             value: stackOffset || 0,
           } as Stack;
         }
+        fixedInstructions.push(instruction);
         continue;
       }
       case "Idiv": {
@@ -310,6 +452,57 @@ function replacePseudoregisters(asmFunc: AsmFunction) {
         fixedInstructions.push(instruction);
         continue;
       }
+      case "Cmp": {
+        // Check source of compare
+        if ((instruction as Cmp).a.kind == "PseudoReg") {
+          const stackOffset = getStackOffset(
+            (instruction as Cmp).a as PseudoReg,
+            symbols,
+          );
+
+          stackSize = Math.max(stackSize, -stackOffset);
+          (instruction as Cmp).a = {
+            kind: "Stack",
+            value: stackOffset || 0,
+          } as Stack;
+        }
+
+        // Check destination of compare
+        if ((instruction as Cmp).b.kind == "PseudoReg") {
+          const stackOffset = getStackOffset(
+            (instruction as Cmp).b as PseudoReg,
+            symbols,
+          );
+
+          stackSize = Math.max(stackSize, -stackOffset);
+          (instruction as Cmp).b = {
+            kind: "Stack",
+            value: stackOffset || 0,
+          } as Stack;
+        }
+        fixedInstructions.push(instruction);
+        continue;
+      }
+      case "SetCC": {
+        if ((instruction as SetCC).operand.kind == "PseudoReg") {
+          const stackOffset = getStackOffset(
+            (instruction as SetCC).operand as PseudoReg,
+            symbols,
+          );
+
+          stackSize = Math.max(stackSize, -stackOffset);
+          (instruction as SetCC).operand = {
+            kind: "Stack",
+            value: stackOffset || 0,
+          } as Stack;
+        }
+        fixedInstructions.push(instruction);
+        continue;
+      }
+      case "AllocateStack":
+      case "Jmp":
+      case "JmpCC":
+      case "Label":
       case "Cdq":
       case "Ret":
         fixedInstructions.push(instruction);
@@ -346,9 +539,31 @@ function isMoveValid(ins: Mov) {
   return !(ins.source.kind == "Stack" && ins.destination.kind == "Stack");
 }
 
+function isCmpValid(ins: Cmp) {
+  return !(ins.a.kind == "Stack" && ins.b.kind == "Stack");
+}
+
 function isBinOpValid(ins: BinaryOperation): boolean {
   return !(ins.operand1.kind == "Stack" && ins.operand2.kind == "Stack");
 }
+
+function getComparisonFlags(ins: TasBinary): ConditionFlags | undefined {
+  switch (ins.operator) {
+    case BinaryOperator.Assertion:
+      return ConditionFlags.E;
+    case BinaryOperator.NotEqual:
+      return ConditionFlags.NE;
+    case BinaryOperator.LessThan:
+      return ConditionFlags.L;
+    case BinaryOperator.LessThanEqual:
+      return ConditionFlags.LE;
+    case BinaryOperator.GreaterThan:
+      return ConditionFlags.G;
+    case BinaryOperator.GreaterThanEqual:
+      return ConditionFlags.GE;
+  }
+}
+
 function handleComplexBinary(ins: TasBinary, func: AsmFunction) {
   switch (ins.operator) {
     case BinaryOperator.Divide: {
@@ -423,6 +638,45 @@ function fixupInvalidInstructions(asmFunc: AsmFunction) {
         } as Mov);
         continue;
       }
+      case "Cmp": {
+        // Cannot have second operand be a constant
+        if ((instruction as Cmp).b.kind == "Imm") {
+          fixedInstructions.push({
+            kind: "Mov",
+            source: (instruction as Cmp).b,
+            destination: { kind: "Reg", register: Register.R11 } as Reg,
+          } as Mov);
+          fixedInstructions.push({
+            kind: "Cmp",
+            a: (instruction as Cmp).a,
+            b: { kind: "Reg", register: Register.R11 } as Reg,
+          } as Cmp);
+          continue;
+        }
+
+        if (isCmpValid(instruction as Cmp)) {
+          fixedInstructions.push(instruction);
+          continue;
+        }
+
+        /*
+         * If the move instruction is writing to and from the stack,
+         * we need to split that into to moves:
+         * stack -> R10
+         * R10 -> stack
+         */
+        fixedInstructions.push({
+          kind: "Mov",
+          source: (instruction as Cmp).a,
+          destination: { kind: "Reg", register: Register.R10 } as Reg,
+        } as Mov);
+        fixedInstructions.push({
+          kind: "Cmp",
+          a: { kind: "Reg", register: Register.R10 } as Reg,
+          b: (instruction as Cmp).b,
+        } as Cmp);
+        continue;
+      }
       case "Idiv": {
         if ((instruction as Idiv).operand.kind != "Imm") {
           fixedInstructions.push(instruction);
@@ -441,6 +695,29 @@ function fixupInvalidInstructions(asmFunc: AsmFunction) {
         continue;
       }
       case "BinaryOperation": {
+        // Add, Sub, and Mult cannot have their second operand be a constant
+        if (
+          (instruction as BinaryOperation).operand2.kind == "Imm" &&
+          ((instruction as BinaryOperation).operator == BinaryOperator.Add ||
+            (instruction as BinaryOperation).operator ==
+              BinaryOperator.Subtract ||
+            (instruction as BinaryOperation).operator ==
+              BinaryOperator.Multiply)
+        ) {
+          fixedInstructions.push({
+            kind: "Mov",
+            source: (instruction as BinaryOperation).operand1,
+            destination: { kind: "Reg", register: Register.R10 } as Reg,
+          } as Mov);
+          fixedInstructions.push({
+            kind: "BinaryOperation",
+            operator: (instruction as BinaryOperation).operator,
+            operand1: { kind: "Reg", register: Register.R10 } as Reg,
+            operand2: (instruction as BinaryOperation).operand2,
+          } as BinaryOperation);
+          continue;
+        }
+
         if (
           (instruction as BinaryOperation).operator ==
             BinaryOperator.Multiply &&

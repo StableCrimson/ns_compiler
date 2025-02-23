@@ -14,6 +14,7 @@ export type NodeType =
 export enum UnaryOperator {
   Complement = "~",
   Negation = "-",
+  Not = "!",
 }
 
 export enum BinaryOperator {
@@ -22,6 +23,14 @@ export enum BinaryOperator {
   Multiply = "*",
   Divide = "/",
   Remainder = "%",
+  LogicalAnd = "&&",
+  LogicalOr = "||",
+  Assertion = "==",
+  NotEqual = "!=",
+  LessThan = "<",
+  LessThanEqual = "<=",
+  GreaterThan = ">",
+  GreaterThanEqual = ">=",
 }
 
 interface AstNode {
@@ -72,12 +81,6 @@ export interface BinaryExpr extends Expr {
 export interface ReturnStatement extends Statement {
   kind: "Return";
   value: Expr;
-}
-
-interface IfStatement extends Statement {
-  condition: Expr;
-  thenBranch: Statement;
-  elseBranch?: Statement;
 }
 
 export class Parser {
@@ -143,24 +146,6 @@ export class Parser {
         this.expect(TokenType.Semicolon);
         return { kind: "Return", value: expr } as ReturnStatement;
       }
-      //case TokenType.If: {
-      //  this.consume();
-      //  this.expect(TokenType.OpenParenthesis);
-      //  const condition = this.parseExpr();
-      //  this.expect(TokenType.CloseParenthesis);
-      //  this.expect(TokenType.OpenBrace);
-      //  const thenBranch = this.parseStatement();
-      //  this.expect(TokenType.CloseBrace);
-      //
-      //  let elseBranch: Statement | undefined;
-      //
-      //  if (this.peek().type === TokenType.Else) {
-      //    this.consume();
-      //    elseBranch = this.parseStatement();
-      //  }
-      //
-      //  return { condition, thenBranch, elseBranch } as IfStatement;
-      //}
       default:
         console.error("Unknown statement type", type);
         Deno.exit(1);
@@ -226,6 +211,15 @@ export class Parser {
           expr,
         } as UnaryExpr;
       }
+      case TokenType.LogicalNot: {
+        this.consume();
+        const expr = this.parseFactor();
+        return {
+          kind: "UnaryExpr",
+          operator: UnaryOperator.Not,
+          expr,
+        } as UnaryExpr;
+      }
       default:
         console.error("Unknown expression type", type);
         Deno.exit(1);
@@ -242,6 +236,14 @@ export class Parser {
       case TokenType.Asterisk:
       case TokenType.ForwardSlash:
       case TokenType.Modulus:
+      case TokenType.DoubleEqual:
+      case TokenType.NotEqual:
+      case TokenType.LogicalAnd:
+      case TokenType.LogicalOr:
+      case TokenType.GreaterThan:
+      case TokenType.GreaterThanEqual:
+      case TokenType.LessThan:
+      case TokenType.LessThanEqual:
         return true;
       default:
         return false;
@@ -262,6 +264,22 @@ export class Parser {
         return BinaryOperator.Divide;
       case TokenType.Modulus:
         return BinaryOperator.Remainder;
+      case TokenType.DoubleEqual:
+        return BinaryOperator.Assertion;
+      case TokenType.NotEqual:
+        return BinaryOperator.NotEqual;
+      case TokenType.LogicalAnd:
+        return BinaryOperator.LogicalAnd;
+      case TokenType.LogicalOr:
+        return BinaryOperator.LogicalOr;
+      case TokenType.GreaterThan:
+        return BinaryOperator.GreaterThan;
+      case TokenType.GreaterThanEqual:
+        return BinaryOperator.GreaterThanEqual;
+      case TokenType.LessThan:
+        return BinaryOperator.LessThan;
+      case TokenType.LessThanEqual:
+        return BinaryOperator.LessThanEqual;
       default:
         console.error("Expected binary operator:", token);
         Deno.exit(1);
@@ -273,6 +291,14 @@ export class Parser {
 
   private precedence(operator: BinaryOperator): number {
     const precedenceMap: Record<string, number> = {
+      "||": 5,
+      "&&": 10,
+      "==": 30,
+      "!=": 30,
+      "<": 35,
+      "<=": 35,
+      ">": 35,
+      ">=": 35,
       "+": 45,
       "-": 45,
       "*": 50,

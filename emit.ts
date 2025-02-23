@@ -3,10 +3,15 @@ import {
   AsmOperand,
   AsmProgram,
   BinaryOperation,
+  Cmp,
   Idiv,
   Imm,
+  Jmp,
+  JmpCC,
+  Label,
   Mov,
   Reg,
+  SetCC,
   Stack,
   UnaryOperation,
 } from "./codegen.ts";
@@ -41,25 +46,47 @@ export function emit(sourceCode: AsmProgram, target: string) {
         case "Mov": {
           const src = getMoveOperand((instruction as Mov).source);
           const dest = getMoveOperand((instruction as Mov).destination);
-          output += `  mov ${src}, ${dest}\n`;
+          output += `  mov    ${src}, ${dest}\n`;
           break;
         }
         case "Ret":
           // Clear stack
-          output += "  movq  %rbp, %rsp\n";
-          output += "  popq  %rbp\n";
+          output += "  movq   %rbp, %rsp\n";
+          output += "  popq   %rbp\n";
           output += `  ret\n`;
           break;
         case "AllocateStack":
-          output += `  subq  $${(instruction as AllocateStack).value}, %rsp\n`;
+          output += `  subq   $${(instruction as AllocateStack).value}, %rsp\n`;
           break;
         case "Cdq":
           output += "  cdq\n";
           break;
         case "Idiv":
-          output += `  idivl ${getMoveOperand(
+          output += `  idivl  ${getMoveOperand(
             (instruction as Idiv).operand,
           )}\n`;
+          break;
+        case "Cmp":
+          output += `  cmpl   ${getMoveOperand((instruction as Cmp).a)}  ${getMoveOperand(
+            (instruction as Cmp).b,
+          )}\n`;
+          break;
+        case "Jmp":
+          output += `  jmp    .L${(instruction as Jmp).label}\n`;
+          break;
+        case "JmpCC":
+          output += `  j${(instruction as JmpCC).condition.padEnd(4)}  .L${
+            (instruction as Jmp).label
+          }\n`;
+          break;
+        case "SetCC":
+          output += `  set${(instruction as SetCC).condition.padEnd(2)}  ${getMoveOperand(
+            (instruction as SetCC).operand,
+          )}\n`;
+          break;
+        case "Label":
+          // On MacOS, omit the .
+          output += `.L${(instruction as Label).symbol}:\n`;
           break;
         case "UnaryOperation":
           switch ((instruction as UnaryOperation).operator) {
@@ -72,7 +99,9 @@ export function emit(sourceCode: AsmProgram, target: string) {
           }
           break;
         case "BinaryOperation":
-          output += `  ${getBinaryOperator(instruction as BinaryOperation)} ${getMoveOperand(
+          output += `  ${getBinaryOperator(
+            instruction as BinaryOperation,
+          ).padEnd(6)} ${getMoveOperand(
             (instruction as BinaryOperation).operand1,
           )}, ${getMoveOperand((instruction as BinaryOperation).operand2)}\n`;
           break;

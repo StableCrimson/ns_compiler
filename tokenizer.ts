@@ -2,6 +2,7 @@ const IDENTIFIER = /[a-zA-Z_]\w*\b/;
 const CONSTANT = /[0-9]+\b/;
 const COMMENT = /\/\/.*/;
 const BLOCK_COMMENT = /\/\*(\*(?!\/)|[^*])*\*\//;
+const PREPROCESSOR_STATEMENT = /#.+\n/;
 
 export enum TokenType {
   Identifier,
@@ -105,6 +106,17 @@ export function tokenize(input: string): Token[] {
   const tokens: Token[] = [];
 
   while (sourceCode.length > 0) {
+    // Preprocessor steps
+    // TODO: Will need to actually support this later
+    const preprocessorStatement = sourceCode.match(PREPROCESSOR_STATEMENT);
+    if (
+      preprocessorStatement &&
+      sourceCode.startsWith(preprocessorStatement[0])
+    ) {
+      sourceCode = sourceCode.slice(preprocessorStatement[0].length).trim();
+      continue;
+    }
+
     // Comments
     const comment = sourceCode.match(COMMENT);
 
@@ -395,6 +407,19 @@ export function tokenize(input: string): Token[] {
       }
 
       const token = { type: TokenType.LessThan, value: "<" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "=") {
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.DoubleEqual, value: "==" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+      const token = { type: TokenType.Equal, value: "=" };
       tokens.push(token);
       sourceCode = sourceCode.slice(1).trim();
       continue;
