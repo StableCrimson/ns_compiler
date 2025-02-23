@@ -2,19 +2,26 @@ import {
   AllocateStack,
   AsmOperand,
   AsmProgram,
+  BinaryOperation,
+  Idiv,
   Imm,
   Mov,
   Reg,
   Stack,
   UnaryOperation,
 } from "./codegen.ts";
-import { UnaryOperator } from "./parser.ts";
+import { BinaryOperator, UnaryOperator } from "./parser.ts";
 
 enum UnaryAsmInstruction {
   Negation = "  negl\n",
   Not = "  notl\n",
 }
 
+enum BinaryAsmInstruction {
+  Add = "addl",
+  Subtract = "subl",
+  Multiply = "imml",
+}
 export function emit(sourceCode: AsmProgram, target: string) {
   let output = "";
   let funcSymbols = "";
@@ -46,6 +53,14 @@ export function emit(sourceCode: AsmProgram, target: string) {
         case "AllocateStack":
           output += `  subq  $${(instruction as AllocateStack).value}, %rsp\n`;
           break;
+        case "Cdq":
+          output += "  cdq\n";
+          break;
+        case "Idiv":
+          output += `  idivl ${getMoveOperand(
+            (instruction as Idiv).operand,
+          )}\n`;
+          break;
         case "UnaryOperation":
           switch ((instruction as UnaryOperation).operator) {
             case UnaryOperator.Negation:
@@ -55,6 +70,11 @@ export function emit(sourceCode: AsmProgram, target: string) {
               output += UnaryAsmInstruction.Not;
               break;
           }
+          break;
+        case "BinaryOperation":
+          output += `  ${getBinaryOperator(instruction as BinaryOperation)} ${getMoveOperand(
+            (instruction as BinaryOperation).operand1,
+          )}, ${getMoveOperand((instruction as BinaryOperation).operand2)}\n`;
           break;
         default:
           console.error("Unsupported ASM instruction:", instruction);
@@ -85,4 +105,20 @@ function getMoveOperand(val: AsmOperand): string {
 
   // NOTE: Unreachable. To make TS happy.
   return "";
+}
+
+function getBinaryOperator(ins: BinaryOperation): BinaryAsmInstruction {
+  switch (ins.operator) {
+    case BinaryOperator.Add:
+      return BinaryAsmInstruction.Add;
+    case BinaryOperator.Subtract:
+      return BinaryAsmInstruction.Subtract;
+    case BinaryOperator.Multiply:
+      return BinaryAsmInstruction.Multiply;
+    default:
+      console.error("Unsupported binary operator:", ins.operator);
+      Deno.exit(1);
+  }
+  // NOTE: Unreachable
+  return {} as BinaryAsmInstruction;
 }

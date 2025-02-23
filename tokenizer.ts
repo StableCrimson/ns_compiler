@@ -37,7 +37,37 @@ export enum TokenType {
   Unsigned,
   Tilde,
   Minus,
+  Plus,
   Decrement,
+  Increment,
+  MinusEqual,
+  PlusEqual,
+  AsteriskEqual,
+  SlashEqual,
+  Asterisk,
+  ForwardSlash,
+  Modulus,
+  ModulusEqual,
+  BitwiseAnd,
+  BitwiseOr,
+  BitwiseXor,
+  AndEqual,
+  OrEqual,
+  XorEqual,
+  LogicalAnd,
+  LogicalOr,
+  LogicalNot,
+  NotEqual,
+  Equal,
+  DoubleEqual,
+  LeftShift,
+  LeftShiftEqual,
+  RightShift,
+  RightShiftEqual,
+  GreaterThan,
+  LessThan,
+  GreaterThanEqual,
+  LessThanEqual,
   EOF,
 }
 
@@ -72,7 +102,7 @@ export type Token = {
 
 export function tokenize(input: string): Token[] {
   let sourceCode = input.trim();
-  let tokens: Token[] = [];
+  const tokens: Token[] = [];
 
   while (sourceCode.length > 0) {
     // Comments
@@ -171,7 +201,12 @@ export function tokenize(input: string): Token[] {
     }
 
     if (sourceCode[0] === "-") {
-      // TODO: Not supported yet
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.MinusEqual, value: "-=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
       if (sourceCode[1] === "-") {
         const token = { type: TokenType.Decrement, value: "--" };
         tokens.push(token);
@@ -184,6 +219,187 @@ export function tokenize(input: string): Token[] {
       sourceCode = sourceCode.slice(1).trim();
       continue;
     }
+
+    if (sourceCode[0] === "+") {
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.PlusEqual, value: "+=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+      if (sourceCode[1] === "+") {
+        const token = { type: TokenType.Increment, value: "++" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+
+      const token = { type: TokenType.Plus, value: "+" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "*") {
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.AsteriskEqual, value: "*=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+      const token = { type: TokenType.Asterisk, value: "*" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "/") {
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.SlashEqual, value: "/=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+      const token = { type: TokenType.ForwardSlash, value: "/" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "%") {
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.ModulusEqual, value: "%=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+      const token = { type: TokenType.Modulus, value: "%" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "!") {
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.NotEqual, value: "!=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+
+      const token = { type: TokenType.LogicalNot, value: "!" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "&") {
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.AndEqual, value: "&=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+      if (sourceCode[1] === "&") {
+        const token = { type: TokenType.LogicalAnd, value: "&&" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+
+      const token = { type: TokenType.BitwiseAnd, value: "&" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "|") {
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.OrEqual, value: "|=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+      if (sourceCode[1] === "|") {
+        const token = { type: TokenType.LogicalOr, value: "||" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+
+      const token = { type: TokenType.BitwiseOr, value: "|" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "^") {
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.XorEqual, value: "^=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+      const token = { type: TokenType.BitwiseXor, value: "^" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === ">") {
+      if (sourceCode[1] === ">") {
+        if (sourceCode[2] === "=") {
+          const token = { type: TokenType.RightShiftEqual, value: ">>=" };
+          tokens.push(token);
+          sourceCode = sourceCode.slice(3).trim();
+          continue;
+        }
+        const token = { type: TokenType.RightShift, value: ">>" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.GreaterThanEqual, value: ">=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+
+      const token = { type: TokenType.GreaterThan, value: ">" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "<") {
+      if (sourceCode[1] === "<") {
+        if (sourceCode[2] === "=") {
+          const token = { type: TokenType.LeftShiftEqual, value: "<<=" };
+          tokens.push(token);
+          sourceCode = sourceCode.slice(3).trim();
+          continue;
+        }
+        const token = { type: TokenType.LeftShift, value: "<<" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+
+      if (sourceCode[1] === "=") {
+        const token = { type: TokenType.LessThanEqual, value: "<=" };
+        tokens.push(token);
+        sourceCode = sourceCode.slice(2).trim();
+        continue;
+      }
+
+      const token = { type: TokenType.LessThan, value: "<" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
     // We weren't able to match the current token, bail
     console.error("Unexpected token: " + sourceCode);
     Deno.exit(1);

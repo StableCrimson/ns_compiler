@@ -1,6 +1,7 @@
-import { UnaryOperator } from "./parser.ts";
+import { BinaryOperator, UnaryOperator } from "./parser.ts";
 
 import {
+  TasBinary,
   TasConstant,
   TasFunction,
   TasProgram,
@@ -13,9 +14,19 @@ import {
 export enum Register {
   AX = "eax",
   R10 = "r10d",
+  DX = "edx",
+  R11 = "r11d",
 }
 
-type AsmInstructionKind = "Mov" | "Ret" | "UnaryOperation" | "AllocateStack";
+type AsmInstructionKind =
+  | "Mov"
+  | "Ret"
+  | "Idiv"
+  | "Cdq"
+  | "BinaryOperation"
+  | "UnaryOperation"
+  | "AllocateStack";
+
 type AsmOperandKind = "Imm" | "PseudoReg" | "Stack" | "Reg";
 
 interface AsmConstruct {}
@@ -45,15 +56,31 @@ export interface Mov extends AsmInstruction {
   destination: AsmOperand;
 }
 
-export interface UnaryOperation {
+export interface UnaryOperation extends AsmInstruction {
   kind: "UnaryOperation";
   operator: UnaryOperator;
   operand: AsmOperand;
 }
 
+export interface BinaryOperation extends AsmInstruction {
+  kind: "BinaryOperation";
+  operator: BinaryOperator;
+  operand1: AsmOperand;
+  operand2: AsmOperand;
+}
+
 export interface AllocateStack extends AsmInstruction {
   kind: "AllocateStack";
   value: number;
+}
+
+export interface Idiv extends AsmInstruction {
+  kind: "Idiv";
+  operand: AsmOperand;
+}
+
+export interface Cdq extends AsmInstruction {
+  kind: "Cdq";
 }
 
 export interface AsmOperand extends AsmConstruct {
@@ -92,6 +119,8 @@ export function generateAsmTree(program: TasProgram): AsmProgram {
     const asmFunc = generateFunction(func);
     // Pass 2: Replace the pseudoregisters and fixup move instructions
     replacePseudoregisters(asmFunc);
+    // Pass 3: Fixup invalid instructions
+    fixupInvalidInstructions(asmFunc);
     asm.body.push(asmFunc);
   }
 
@@ -119,6 +148,31 @@ function generateFunction(functionNode: TasFunction): AsmFunction {
           operator: ins.operator,
           operand: getOperand(ins.destination),
         } as UnaryOperation);
+        continue;
+      }
+      case "BinaryOperation": {
+        const ins = instruction as TasBinary;
+
+        // Division and remainders are different and need to be handled differently
+        if (
+          ins.operator == BinaryOperator.Divide ||
+          ins.operator == BinaryOperator.Remainder
+        ) {
+          handleComplexBinary(ins, asmFunc);
+          continue;
+        }
+
+        asmFunc.instructions.push({
+          kind: "Mov",
+          source: getOperand(ins.source1),
+          destination: getOperand(ins.destination),
+        } as Mov);
+        asmFunc.instructions.push({
+          kind: "BinaryOperation",
+          operator: ins.operator,
+          operand1: getOperand(ins.source2),
+          operand2: getOperand(ins.destination),
+        } as BinaryOperation);
         continue;
       }
       case "Return": {
@@ -181,6 +235,35 @@ function replacePseudoregisters(asmFunc: AsmFunction) {
         fixedInstructions.push(instruction);
         continue;
       }
+      case "BinaryOperation": {
+        if ((instruction as BinaryOperation).operand1.kind == "PseudoReg") {
+          const stackOffset = getStackOffset(
+            (instruction as BinaryOperation).operand1 as PseudoReg,
+            symbols,
+          );
+
+          stackSize = Math.max(stackSize, -stackOffset);
+          (instruction as BinaryOperation).operand1 = {
+            kind: "Stack",
+            value: stackOffset || 0,
+          } as Stack;
+        }
+
+        if ((instruction as BinaryOperation).operand2.kind == "PseudoReg") {
+          const stackOffset = getStackOffset(
+            (instruction as BinaryOperation).operand2 as PseudoReg,
+            symbols,
+          );
+
+          stackSize = Math.max(stackSize, -stackOffset);
+          (instruction as BinaryOperation).operand2 = {
+            kind: "Stack",
+            value: stackOffset || 0,
+          } as Stack;
+        }
+        fixedInstructions.push(instruction);
+        continue;
+      }
       case "Mov": {
         // Check source of move
         if ((instruction as Mov).source.kind == "PseudoReg") {
@@ -209,34 +292,28 @@ function replacePseudoregisters(asmFunc: AsmFunction) {
             value: stackOffset || 0,
           } as Stack;
         }
-
-        if (isMoveValid(instruction as Mov)) {
-          fixedInstructions.push(instruction);
-          continue;
-        }
-
-        /*
-         * If the move instruction is writing to and from the stack,
-         * we need to split that into to moves:
-         * stack -> R10
-         * R10 -> stack
-         */
-        fixedInstructions.push({
-          kind: "Mov",
-          source: (instruction as Mov).source,
-          destination: { kind: "Reg", register: Register.R10 } as Reg,
-        } as Mov);
-        fixedInstructions.push({
-          kind: "Mov",
-          source: { kind: "Reg", register: Register.R10 } as Reg,
-          destination: (instruction as Mov).destination,
-        } as Mov);
         continue;
       }
-      case "Ret": {
+      case "Idiv": {
+        if ((instruction as Idiv).operand.kind == "PseudoReg") {
+          const stackOffset = getStackOffset(
+            (instruction as Idiv).operand as PseudoReg,
+            symbols,
+          );
+
+          stackSize = Math.max(stackSize, -stackOffset);
+          (instruction as Idiv).operand = {
+            kind: "Stack",
+            value: stackOffset || 0,
+          } as Stack;
+        }
         fixedInstructions.push(instruction);
         continue;
       }
+      case "Cdq":
+      case "Ret":
+        fixedInstructions.push(instruction);
+        continue;
       default:
         console.error("Unknown AsmInstruction:", instruction);
         Deno.exit(1);
@@ -267,4 +344,155 @@ function getStackOffset(pseudoReg: PseudoReg, symbols: string[]): number {
 
 function isMoveValid(ins: Mov) {
   return !(ins.source.kind == "Stack" && ins.destination.kind == "Stack");
+}
+
+function isBinOpValid(ins: BinaryOperation): boolean {
+  return !(ins.operand1.kind == "Stack" && ins.operand2.kind == "Stack");
+}
+function handleComplexBinary(ins: TasBinary, func: AsmFunction) {
+  switch (ins.operator) {
+    case BinaryOperator.Divide: {
+      func.instructions.push({
+        kind: "Mov",
+        source: getOperand(ins.source1),
+        destination: { kind: "Reg", register: Register.AX } as Reg,
+      } as Mov);
+      func.instructions.push({
+        kind: "Cdq",
+      } as Cdq);
+      func.instructions.push({
+        kind: "Idiv",
+        operand: getOperand(ins.source2),
+      } as Idiv);
+      func.instructions.push({
+        kind: "Mov",
+        source: { kind: "Reg", register: Register.AX } as Reg,
+        destination: getOperand(ins.destination),
+      } as Mov);
+      break;
+    }
+    case BinaryOperator.Remainder: {
+      func.instructions.push({
+        kind: "Mov",
+        source: getOperand(ins.source1),
+        destination: { kind: "Reg", register: Register.AX } as Reg,
+      } as Mov);
+      func.instructions.push({
+        kind: "Cdq",
+      } as Cdq);
+      func.instructions.push({
+        kind: "Idiv",
+        operand: getOperand(ins.source2),
+      } as Idiv);
+      func.instructions.push({
+        kind: "Mov",
+        source: { kind: "Reg", register: Register.DX } as Reg,
+        destination: getOperand(ins.destination),
+      } as Mov);
+      break;
+    }
+  }
+}
+
+function fixupInvalidInstructions(asmFunc: AsmFunction) {
+  const fixedInstructions: AsmInstruction[] = [];
+
+  for (const instruction of asmFunc.instructions) {
+    switch (instruction.kind) {
+      case "Mov": {
+        if (isMoveValid(instruction as Mov)) {
+          fixedInstructions.push(instruction);
+          continue;
+        }
+
+        /*
+         * If the move instruction is writing to and from the stack,
+         * we need to split that into to moves:
+         * stack -> R10
+         * R10 -> stack
+         */
+        fixedInstructions.push({
+          kind: "Mov",
+          source: (instruction as Mov).source,
+          destination: { kind: "Reg", register: Register.R10 } as Reg,
+        } as Mov);
+        fixedInstructions.push({
+          kind: "Mov",
+          source: { kind: "Reg", register: Register.R10 } as Reg,
+          destination: (instruction as Mov).destination,
+        } as Mov);
+        continue;
+      }
+      case "Idiv": {
+        if ((instruction as Idiv).operand.kind != "Imm") {
+          fixedInstructions.push(instruction);
+          continue;
+        }
+
+        fixedInstructions.push({
+          kind: "Mov",
+          source: (instruction as Idiv).operand,
+          destination: { kind: "Reg", register: Register.R10 } as Reg,
+        } as Mov);
+        fixedInstructions.push({
+          kind: "Idiv",
+          operand: { kind: "Reg", register: Register.R10 } as Reg,
+        } as Idiv);
+        continue;
+      }
+      case "BinaryOperation": {
+        if (
+          (instruction as BinaryOperation).operator ==
+            BinaryOperator.Multiply &&
+          (instruction as BinaryOperation).operand2.kind == "Stack"
+        ) {
+          fixedInstructions.push({
+            kind: "Mov",
+            source: (instruction as BinaryOperation).operand2,
+            destination: { kind: "Reg", register: Register.R11 } as Reg,
+          } as Mov);
+          fixedInstructions.push({
+            kind: "BinaryOperation",
+            operator: (instruction as BinaryOperation).operator,
+            operand1: (instruction as BinaryOperation).operand1,
+            operand2: { kind: "Reg", register: Register.R11 } as Reg,
+          } as BinaryOperation);
+          fixedInstructions.push({
+            kind: "Mov",
+            source: { kind: "Reg", register: Register.R11 } as Reg,
+            destination: (instruction as BinaryOperation).operand2,
+          } as Mov);
+          continue;
+        }
+        if (isBinOpValid(instruction as BinaryOperation)) {
+          fixedInstructions.push(instruction);
+          continue;
+        }
+
+        if (
+          (instruction as BinaryOperation).operator == BinaryOperator.Add ||
+          (instruction as BinaryOperation).operator == BinaryOperator.Subtract
+        ) {
+          fixedInstructions.push({
+            kind: "Mov",
+            source: (instruction as BinaryOperation).operand1,
+            destination: { kind: "Reg", register: Register.R10 } as Reg,
+          } as Mov);
+          fixedInstructions.push({
+            kind: "BinaryOperation",
+            operator: (instruction as BinaryOperation).operator,
+            operand1: { kind: "Reg", register: Register.R10 } as Reg,
+            operand2: (instruction as BinaryOperation).operand2,
+          } as BinaryOperation);
+          continue;
+        }
+
+        continue;
+      }
+      default:
+        fixedInstructions.push(instruction);
+    }
+  }
+
+  asmFunc.instructions = fixedInstructions;
 }

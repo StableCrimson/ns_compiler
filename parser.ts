@@ -7,12 +7,21 @@ export type NodeType =
   | "Identifier"
   | "Expr"
   | "UnaryExpr"
+  | "BinaryExpr"
   | "Return"
   | "NumLiteral";
 
 export enum UnaryOperator {
   Complement = "~",
   Negation = "-",
+}
+
+export enum BinaryOperator {
+  Add = "+",
+  Subtract = "-",
+  Multiply = "*",
+  Divide = "/",
+  Remainder = "%",
 }
 
 interface AstNode {
@@ -38,15 +47,26 @@ export interface Expr extends AstNode {
   kind: NodeType;
 }
 
-export interface NumLiteral extends Expr {
+export interface Factor extends Expr {
+  kind: NodeType;
+}
+
+export interface NumLiteral extends Factor {
   kind: "NumLiteral";
   value: number;
 }
 
-export interface UnaryExpr extends Expr {
+export interface UnaryExpr extends Factor {
   kind: "UnaryExpr";
   operator: UnaryOperator;
-  expr: Expr;
+  expr: Factor;
+}
+
+export interface BinaryExpr extends Expr {
+  kind: "BinaryExpr";
+  operator: BinaryOperator;
+  left: Expr;
+  right: Expr;
 }
 
 export interface ReturnStatement extends Statement {
@@ -87,7 +107,7 @@ export class Parser {
   public produceAst(sourceCode: string): Program {
     this.tokens = tokenize(sourceCode);
 
-    let program: Program = {
+    const program: Program = {
       kind: "Program",
       body: [],
     };
@@ -123,24 +143,24 @@ export class Parser {
         this.expect(TokenType.Semicolon);
         return { kind: "Return", value: expr } as ReturnStatement;
       }
-      case TokenType.If: {
-        this.consume();
-        this.expect(TokenType.OpenParenthesis);
-        const condition = this.parseExpr();
-        this.expect(TokenType.CloseParenthesis);
-        this.expect(TokenType.OpenBrace);
-        const thenBranch = this.parseStatement();
-        this.expect(TokenType.CloseBrace);
-
-        let elseBranch: Statement | undefined;
-
-        if (this.peek().type === TokenType.Else) {
-          this.consume();
-          elseBranch = this.parseStatement();
-        }
-
-        return { condition, thenBranch, elseBranch } as IfStatement;
-      }
+      //case TokenType.If: {
+      //  this.consume();
+      //  this.expect(TokenType.OpenParenthesis);
+      //  const condition = this.parseExpr();
+      //  this.expect(TokenType.CloseParenthesis);
+      //  this.expect(TokenType.OpenBrace);
+      //  const thenBranch = this.parseStatement();
+      //  this.expect(TokenType.CloseBrace);
+      //
+      //  let elseBranch: Statement | undefined;
+      //
+      //  if (this.peek().type === TokenType.Else) {
+      //    this.consume();
+      //    elseBranch = this.parseStatement();
+      //  }
+      //
+      //  return { condition, thenBranch, elseBranch } as IfStatement;
+      //}
       default:
         console.error("Unknown statement type", type);
         Deno.exit(1);
@@ -150,12 +170,33 @@ export class Parser {
     return {} as Statement;
   }
 
-  private parseExpr(): Expr {
+  private parseExpr(minimumPrecedence: number = 0): Expr {
+    let left = this.parseFactor();
+
+    // If we have a binary operator, we need to treat
+    // this like a binary expression
+    while (
+      this.isNextBinOp() &&
+      this.precedence(this.nextBinOp(false)) >= minimumPrecedence
+    ) {
+      const operator = this.nextBinOp(true);
+      const right = this.parseExpr(this.precedence(operator) + 1);
+      left = {
+        kind: "BinaryExpr",
+        operator,
+        left,
+        right,
+      } as BinaryExpr;
+    }
+
+    return left;
+  }
+
+  private parseFactor(): Factor {
     const type = this.peek().type;
     switch (type) {
       case TokenType.Constant: {
         const expr = this.consume();
-
         return {
           kind: "NumLiteral",
           value: parseInt(expr.value),
@@ -169,7 +210,7 @@ export class Parser {
       }
       case TokenType.Minus: {
         this.consume();
-        const expr = this.parseExpr();
+        const expr = this.parseFactor();
         return {
           kind: "UnaryExpr",
           operator: UnaryOperator.Negation,
@@ -178,7 +219,7 @@ export class Parser {
       }
       case TokenType.Tilde: {
         this.consume();
-        const expr = this.parseExpr();
+        const expr = this.parseFactor();
         return {
           kind: "UnaryExpr",
           operator: UnaryOperator.Complement,
@@ -192,5 +233,63 @@ export class Parser {
 
     // NOTE: Unreachable, just to make the TS compiler happy
     return {} as Expr;
+  }
+
+  private isNextBinOp(): boolean {
+    switch (this.peek().type) {
+      case TokenType.Plus:
+      case TokenType.Minus:
+      case TokenType.Asterisk:
+      case TokenType.ForwardSlash:
+      case TokenType.Modulus:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  private nextBinOp(consume: boolean): BinaryOperator {
+    const token = consume ? this.consume() : this.peek();
+
+    switch (token.type) {
+      case TokenType.Plus:
+        return BinaryOperator.Add;
+      case TokenType.Minus:
+        return BinaryOperator.Subtract;
+      case TokenType.Asterisk:
+        return BinaryOperator.Multiply;
+      case TokenType.ForwardSlash:
+        return BinaryOperator.Divide;
+      case TokenType.Modulus:
+        return BinaryOperator.Remainder;
+      default:
+        console.error("Expected binary operator:", token);
+        Deno.exit(1);
+    }
+
+    // NOTE unreachable
+    return {} as BinaryOperator;
+  }
+
+  private precedence(operator: BinaryOperator): number {
+    const precedenceMap: Record<string, number> = {
+      "+": 45,
+      "-": 45,
+      "*": 50,
+      "/": 50,
+      "%": 50,
+    };
+
+    const precedence = precedenceMap[operator];
+
+    if (precedence) {
+      return precedence;
+    }
+
+    console.error("Unsupported binary operator:", operator);
+    Deno.exit(1);
+
+    // NOTE: Unreachable
+    return 1000000;
   }
 }

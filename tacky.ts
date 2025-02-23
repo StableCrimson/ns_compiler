@@ -1,4 +1,6 @@
 import {
+  BinaryExpr,
+  BinaryOperator,
   Expr,
   Function,
   NumLiteral,
@@ -9,7 +11,7 @@ import {
   UnaryOperator,
 } from "./parser.ts";
 
-type InstructionType = "UnaryOperation" | "Return";
+type InstructionType = "UnaryOperation" | "BinaryOperation" | "Return";
 type TasValueKind = "Constant" | "Variable";
 
 interface TasConstruct {}
@@ -52,6 +54,15 @@ export interface TasUnary extends TasInstruction {
   kind: "UnaryOperation";
   operator: UnaryOperator;
   source: TasValue;
+  // TODO: This MUST be a temporary variable
+  destination: TasValue;
+}
+
+export interface TasBinary extends TasInstruction {
+  kind: "BinaryOperation";
+  operator: BinaryOperator;
+  source1: TasValue;
+  source2: TasValue;
   // TODO: This MUST be a temporary variable
   destination: TasValue;
 }
@@ -122,6 +133,21 @@ export class TasGenerator {
           destination: dest as TasValue,
           operator: parsedExpr.operator,
         } as TasUnary);
+        return dest;
+      }
+      case "BinaryExpr": {
+        const parsedExpr = expr as BinaryExpr;
+        const source1 = this.emitTackyExpr(parsedExpr.left);
+        const source2 = this.emitTackyExpr(parsedExpr.right);
+        const destSymbol = this.makeTempVariable();
+        const dest = { kind: "Variable", symbol: destSymbol } as TasVariable;
+        this.instructions.push({
+          kind: "BinaryOperation",
+          source1,
+          source2,
+          destination: dest as TasValue,
+          operator: parsedExpr.operator,
+        } as TasBinary);
         return dest;
       }
       default:
