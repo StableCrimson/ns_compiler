@@ -6,9 +6,16 @@ export type NodeType =
   | "Statement"
   | "Identifier"
   | "Expr"
+  | "Declaration"
+  | "Expression"
+  | "Assignment"
+  | "Variable"
   | "UnaryExpr"
   | "BinaryExpr"
   | "Return"
+  | "Null"
+  | "SBlock"
+  | "DBlock"
   | "NumLiteral";
 
 export enum UnaryOperator {
@@ -25,6 +32,7 @@ export enum BinaryOperator {
   Remainder = "%",
   LogicalAnd = "&&",
   LogicalOr = "||",
+  Equal = "=",
   Assertion = "==",
   NotEqual = "!=",
   LessThan = "<",
@@ -45,7 +53,7 @@ export interface Program extends AstNode {
 export interface Function extends AstNode {
   kind: "Function";
   symbol: string;
-  body: Statement[];
+  body: Block[];
 }
 
 export interface Statement extends AstNode {
@@ -56,8 +64,29 @@ export interface Expr extends AstNode {
   kind: NodeType;
 }
 
+export interface Block extends AstNode {
+  kind: NodeType;
+}
+
+export interface Declaration extends AstNode {
+  kind: "Declaration";
+  symbol: string;
+  expr?: Expr;
+}
+
 export interface Factor extends Expr {
   kind: NodeType;
+}
+
+export interface Variable extends Expr {
+  kind: "Variable";
+  symbol: string;
+}
+
+export interface Assignment extends Expr {
+  kind: "Assignment";
+  left: Expr;
+  right: Expr;
 }
 
 export interface NumLiteral extends Factor {
@@ -81,6 +110,25 @@ export interface BinaryExpr extends Expr {
 export interface ReturnStatement extends Statement {
   kind: "Return";
   value: Expr;
+}
+
+export interface ExpressionStatement extends Statement {
+  kind: "Expression";
+  expr: Expr;
+}
+
+export interface Null extends Statement {
+  kind: "Null";
+}
+
+export interface SBlock extends Block {
+  kind: "SBlock";
+  statement: Statement;
+}
+
+export interface DBlock extends Block {
+  kind: "DBlock";
+  declaration: Declaration;
 }
 
 export class Parser {
@@ -130,10 +178,45 @@ export class Parser {
     this.expect(TokenType.Void);
     this.expect(TokenType.CloseParenthesis);
     this.expect(TokenType.OpenBrace);
-    const body = [this.parseStatement()];
+    const body: Block[] = [];
+    while (this.peek().type != TokenType.CloseBrace) {
+      body.push(this.parseBlock());
+    }
     this.expect(TokenType.CloseBrace);
 
     return { kind: "Function", symbol, body } as Function;
+  }
+
+  private parseBlock(): Block {
+    const type = this.peek().type;
+
+    switch (type) {
+      case TokenType.Int:
+        return {
+          kind: "DBlock",
+          declaration: this.parseDeclaration(),
+        } as DBlock;
+      default:
+        return {
+          kind: "SBlock",
+          statement: this.parseStatement(),
+        } as SBlock;
+    }
+  }
+
+  private parseDeclaration(): Declaration {
+    this.expect(TokenType.Int);
+    const ident = this.expect(TokenType.Identifier);
+    const decl = {
+      kind: "Declaration",
+      symbol: ident.value,
+    } as Declaration;
+    if (this.peek().type == TokenType.Equal) {
+      this.consume();
+      decl.expr = this.parseExpr();
+    }
+    this.expect(TokenType.Semicolon);
+    return decl;
   }
 
   private parseStatement(): Statement {
@@ -146,13 +229,18 @@ export class Parser {
         this.expect(TokenType.Semicolon);
         return { kind: "Return", value: expr } as ReturnStatement;
       }
-      default:
-        console.error("Unknown statement type", type);
-        Deno.exit(1);
+      case TokenType.Semicolon:
+        this.consume();
+        return { kind: "Null" } as Null;
+      default: {
+        const expr = {
+          kind: "Expression",
+          expr: this.parseExpr(),
+        } as ExpressionStatement;
+        this.expect(TokenType.Semicolon);
+        return expr;
+      }
     }
-
-    // This will never be reached, just need to make the TS compiler happy
-    return {} as Statement;
   }
 
   private parseExpr(minimumPrecedence: number = 0): Expr {
@@ -164,6 +252,17 @@ export class Parser {
       this.isNextBinOp() &&
       this.precedence(this.nextBinOp(false)) >= minimumPrecedence
     ) {
+      // Assignments are right associative and need to be handled slightly differently
+      if (this.peek().type == TokenType.Equal) {
+        const right = this.parseExpr(this.precedence(this.nextBinOp(true)));
+        left = {
+          kind: "Assignment",
+          left,
+          right,
+        } as Assignment;
+        continue;
+      }
+
       const operator = this.nextBinOp(true);
       const right = this.parseExpr(this.precedence(operator) + 1);
       left = {
@@ -173,13 +272,19 @@ export class Parser {
         right,
       } as BinaryExpr;
     }
-
     return left;
   }
 
   private parseFactor(): Factor {
     const type = this.peek().type;
     switch (type) {
+      case TokenType.Identifier: {
+        const ident = this.consume();
+        return {
+          kind: "Variable",
+          symbol: ident.value,
+        } as Variable;
+      }
       case TokenType.Constant: {
         const expr = this.consume();
         return {
@@ -236,6 +341,7 @@ export class Parser {
       case TokenType.Asterisk:
       case TokenType.ForwardSlash:
       case TokenType.Modulus:
+      case TokenType.Equal:
       case TokenType.DoubleEqual:
       case TokenType.NotEqual:
       case TokenType.LogicalAnd:
@@ -264,6 +370,8 @@ export class Parser {
         return BinaryOperator.Divide;
       case TokenType.Modulus:
         return BinaryOperator.Remainder;
+      case TokenType.Equal:
+        return BinaryOperator.Equal;
       case TokenType.DoubleEqual:
         return BinaryOperator.Assertion;
       case TokenType.NotEqual:
@@ -291,6 +399,7 @@ export class Parser {
 
   private precedence(operator: BinaryOperator): number {
     const precedenceMap: Record<string, number> = {
+      "=": 1,
       "||": 5,
       "&&": 10,
       "==": 30,

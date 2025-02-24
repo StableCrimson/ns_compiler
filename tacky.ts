@@ -1,15 +1,20 @@
-import { PseudoReg } from "./codegen.ts";
 import {
+  Assignment,
   BinaryExpr,
   BinaryOperator,
+  Block,
+  DBlock,
   Expr,
+  ExpressionStatement,
   Function,
   NumLiteral,
   Program,
   ReturnStatement,
+  SBlock,
   Statement,
   UnaryExpr,
   UnaryOperator,
+  Variable,
 } from "./parser.ts";
 
 type InstructionType =
@@ -123,8 +128,8 @@ export class TasGenerator {
   }
 
   private generateFunction(functionNode: Function): TasFunction {
-    for (const statement of functionNode.body) {
-      this.emitTackyStatement(statement);
+    for (const block of functionNode.body) {
+      this.emitTackyBlock(block);
     }
 
     const tasFunc: TasFunction = {
@@ -134,6 +139,30 @@ export class TasGenerator {
     };
 
     return tasFunc;
+  }
+
+  private emitTackyBlock(block: Block) {
+    switch (block.kind) {
+      case "DBlock":
+        if ((block as DBlock).declaration.expr) {
+          // NOTE: This expression will never be undefined if we make it here
+          const value = this.emitTackyExpr(
+            (block as DBlock).declaration.expr ?? ({} as Expr),
+          );
+          this.instructions.push({
+            kind: "Copy",
+            source: value,
+            destination: {
+              kind: "Variable",
+              symbol: (block as DBlock).declaration.symbol,
+            } as TasVariable,
+          } as TasCopy);
+        }
+        break;
+      case "SBlock":
+        this.emitTackyStatement((block as SBlock).statement);
+        break;
+    }
   }
 
   private emitTackyStatement(statement: Statement) {
@@ -147,10 +176,14 @@ export class TasGenerator {
         } as TasReturn);
         break;
       }
-      case "Expr":
+      case "Expression":
+        this.emitTackyExpr((statement as ExpressionStatement).expr);
+        break;
       case "UnaryExpr":
       case "BinaryExpr":
         this.emitTackyExpr(statement as Expr);
+        break;
+      case "Null":
         break;
       default:
         console.error("Unsupported statement type:", statement.kind);
@@ -163,6 +196,25 @@ export class TasGenerator {
       case "NumLiteral": {
         const returnValue = (expr as NumLiteral).value;
         return { kind: "Constant", value: returnValue } as TasConstant;
+      }
+      case "Variable":
+        return {
+          kind: "Variable",
+          symbol: (expr as Variable).symbol,
+        } as TasVariable;
+      case "Assignment": {
+        const parsedExpr = expr as Assignment;
+        const rhs = this.emitTackyExpr(parsedExpr.right);
+        const variable = {
+          kind: "Variable",
+          symbol: ((expr as Assignment).left as Variable).symbol,
+        } as TasVariable;
+        this.instructions.push({
+          kind: "Copy",
+          source: rhs,
+          destination: variable,
+        } as TasCopy);
+        return variable;
       }
       case "UnaryExpr": {
         const parsedExpr = expr as UnaryExpr;
@@ -330,7 +382,7 @@ export class TasGenerator {
         return dest;
       }
       default:
-        console.error("Unsupported statement kind: ", expr.kind);
+        console.error("Unsupported statement kind:", expr.kind);
         Deno.exit(1);
     }
 
@@ -339,7 +391,10 @@ export class TasGenerator {
   }
 
   private makeTempVariable(): string {
-    return `temp_v${this.tempVariableCounter++}`;
+    // Variables with a '.' are invalid in C source code.
+    // So naming the symbols AFTER parsing ensures the
+    // temp variable name won't conflict with the user-defined ones
+    return `temp.v${this.tempVariableCounter++}`;
   }
 
   private makeLabel(): string {

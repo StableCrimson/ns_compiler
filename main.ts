@@ -3,6 +3,7 @@ import { Parser } from "./parser.ts";
 import { generateAsmTree } from "./codegen.ts";
 import { emit } from "./emit.ts";
 import { TasGenerator } from "./tacky.ts";
+import { SemanticAnalyzer } from "./semantic.ts";
 
 const args = Deno.args;
 
@@ -15,6 +16,7 @@ const filePath = args[args.length - 1];
 const fileContents = await Deno.readTextFile(filePath);
 
 const parser = new Parser();
+const analyzer = new SemanticAnalyzer();
 const tasGenerator = new TasGenerator();
 
 let tokens, ast, tas, asmTree;
@@ -30,8 +32,14 @@ switch (args[0]) {
     ast = parser.produceAst(fileContents);
     console.dir(ast, { depth: null });
     break;
+  case "--validate":
+    ast = parser.produceAst(fileContents);
+    analyzer.semanticAnalysis(ast);
+    console.dir(ast, { depth: null });
+    break;
   case "--tacky":
     ast = parser.produceAst(fileContents);
+    analyzer.semanticAnalysis(ast);
     tas = tasGenerator.generateTas(ast);
     console.dir(tas, {
       depth: null,
@@ -39,6 +47,7 @@ switch (args[0]) {
     break;
   case "--codegen":
     ast = parser.produceAst(fileContents);
+    analyzer.semanticAnalysis(ast);
     tas = tasGenerator.generateTas(ast);
     asmTree = generateAsmTree(tas);
     console.dir(asmTree, {
@@ -47,6 +56,7 @@ switch (args[0]) {
     break;
   default: {
     ast = parser.produceAst(fileContents);
+    analyzer.semanticAnalysis(ast);
     tas = tasGenerator.generateTas(ast);
     asmTree = generateAsmTree(tas);
     // TODO: Make this path configurable
