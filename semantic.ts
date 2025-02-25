@@ -1,11 +1,12 @@
 import {
   Assignment,
   BinaryExpr,
+  ConditionalExpr,
   DBlock,
   Declaration,
   Expr,
   ExpressionStatement,
-  Function,
+  IfStatement,
   Program,
   ReturnStatement,
   SBlock,
@@ -67,9 +68,21 @@ export class SemanticAnalyzer {
       case "Expression":
         this.resolveExpression((statement as ExpressionStatement).expr);
         break;
-      case "Null":
-      default:
+      case "If":
+        this.resolveExpression((statement as IfStatement).condition);
+        this.resolveStatement((statement as IfStatement).then);
+        if ((statement as IfStatement).else) {
+          // NOTE: Else will never be undefined if we get here
+          this.resolveStatement(
+            (statement as IfStatement).else ?? ({} as Statement),
+          );
+        }
         break;
+      case "Null":
+        break;
+      default:
+        console.error("Unable to resolve statement:", statement.kind);
+        Deno.exit(1);
     }
   }
 
@@ -102,6 +115,16 @@ export class SemanticAnalyzer {
         this.resolveExpression((expr as BinaryExpr).left);
         this.resolveExpression((expr as BinaryExpr).right);
         break;
+      case "Conditional":
+        this.resolveExpression((expr as ConditionalExpr).condition);
+        this.resolveExpression((expr as ConditionalExpr).ifTrue);
+        this.resolveExpression((expr as ConditionalExpr).ifFalse);
+        break;
+      case "NumLiteral":
+        break;
+      default:
+        console.error("Unable to resolve expression:", expr.kind);
+        Deno.exit(1);
     }
   }
 }

@@ -6,6 +6,7 @@ export type NodeType =
   | "Statement"
   | "Identifier"
   | "Expr"
+  | "Conditional"
   | "Declaration"
   | "Expression"
   | "Assignment"
@@ -13,6 +14,7 @@ export type NodeType =
   | "UnaryExpr"
   | "BinaryExpr"
   | "Return"
+  | "If"
   | "Null"
   | "SBlock"
   | "DBlock"
@@ -39,6 +41,7 @@ export enum BinaryOperator {
   LessThanEqual = "<=",
   GreaterThan = ">",
   GreaterThanEqual = ">=",
+  Ternary = "?",
 }
 
 interface AstNode {
@@ -107,6 +110,13 @@ export interface BinaryExpr extends Expr {
   right: Expr;
 }
 
+export interface ConditionalExpr extends Expr {
+  kind: "Conditional";
+  condition: Expr;
+  ifTrue: Expr;
+  ifFalse: Expr;
+}
+
 export interface ReturnStatement extends Statement {
   kind: "Return";
   value: Expr;
@@ -115,6 +125,14 @@ export interface ReturnStatement extends Statement {
 export interface ExpressionStatement extends Statement {
   kind: "Expression";
   expr: Expr;
+}
+
+export interface IfStatement extends Statement {
+  kind: "If";
+  condition: Expr;
+  // TODO: Should become an array of statements. Maybe blocks?
+  then: Statement;
+  else?: Statement;
 }
 
 export interface Null extends Statement {
@@ -232,6 +250,29 @@ export class Parser {
       case TokenType.Semicolon:
         this.consume();
         return { kind: "Null" } as Null;
+      case TokenType.If: {
+        this.consume();
+        this.expect(TokenType.OpenParenthesis);
+        const condition = this.parseExpr();
+        this.expect(TokenType.CloseParenthesis);
+        //this.expect(TokenType.OpenBrace);
+        const body = this.parseStatement();
+        //this.expect(TokenType.CloseBrace);
+
+        const ifStatement = {
+          kind: "If",
+          condition,
+          then: body,
+        } as IfStatement;
+
+        if (this.peek().type == TokenType.Else) {
+          this.consume();
+          //this.expect(TokenType.OpenBrace);
+          ifStatement.else = this.parseStatement();
+          //this.expect(TokenType.CloseBrace);
+        }
+        return ifStatement;
+      }
       default: {
         const expr = {
           kind: "Expression",
@@ -260,6 +301,23 @@ export class Parser {
           left,
           right,
         } as Assignment;
+        continue;
+      }
+
+      // Ternary operators
+      if (this.peek().type == TokenType.Question) {
+        this.consume();
+        const middle = this.parseExpr();
+        this.expect(TokenType.Colon);
+        const falseTrack = this.parseExpr(
+          this.precedence(BinaryOperator.Ternary),
+        );
+        left = {
+          kind: "Conditional",
+          condition: left,
+          ifTrue: middle,
+          ifFalse: falseTrack,
+        } as ConditionalExpr;
         continue;
       }
 
@@ -326,7 +384,7 @@ export class Parser {
         } as UnaryExpr;
       }
       default:
-        console.error("Unknown expression type", type);
+        console.error("Unknown expression type:", TokenType[type]);
         Deno.exit(1);
     }
 
@@ -350,6 +408,7 @@ export class Parser {
       case TokenType.GreaterThanEqual:
       case TokenType.LessThan:
       case TokenType.LessThanEqual:
+      case TokenType.Question:
         return true;
       default:
         return false;
@@ -388,6 +447,8 @@ export class Parser {
         return BinaryOperator.LessThan;
       case TokenType.LessThanEqual:
         return BinaryOperator.LessThanEqual;
+      case TokenType.Question:
+        return BinaryOperator.Ternary;
       default:
         console.error("Expected binary operator:", token);
         Deno.exit(1);
@@ -400,6 +461,7 @@ export class Parser {
   private precedence(operator: BinaryOperator): number {
     const precedenceMap: Record<string, number> = {
       "=": 1,
+      "?": 3,
       "||": 5,
       "&&": 10,
       "==": 30,
@@ -417,14 +479,11 @@ export class Parser {
 
     const precedence = precedenceMap[operator];
 
-    if (precedence) {
-      return precedence;
+    if (!precedence) {
+      console.error("Unsupported binary operator:", operator);
+      Deno.exit(1);
     }
 
-    console.error("Unsupported binary operator:", operator);
-    Deno.exit(1);
-
-    // NOTE: Unreachable
-    return 1000000;
+    return precedence;
   }
 }

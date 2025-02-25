@@ -3,10 +3,12 @@ import {
   BinaryExpr,
   BinaryOperator,
   Block,
+  ConditionalExpr,
   DBlock,
   Expr,
   ExpressionStatement,
   Function,
+  IfStatement,
   NumLiteral,
   Program,
   ReturnStatement,
@@ -174,6 +176,50 @@ export class TasGenerator {
           kind: "Return",
           value: returnValue,
         } as TasReturn);
+        break;
+      }
+      case "If": {
+        const condResult = {
+          kind: "Variable",
+          symbol: this.makeTempVariable(),
+        } as TasVariable;
+        const endLabel = {
+          kind: "Label",
+          symbol: this.makeLabel(),
+        } as TasLabel;
+        const elseLabel = {
+          kind: "Label",
+          symbol: this.makeLabel(),
+        } as TasLabel;
+
+        // Evaluate the condition
+        const cond = this.emitTackyExpr((statement as IfStatement).condition);
+
+        this.instructions.push({
+          kind: "Copy",
+          source: cond,
+          destination: condResult,
+        } as TasCopy);
+        this.instructions.push({
+          kind: "JumpIfZero",
+          label: (statement as IfStatement).else ? elseLabel : endLabel,
+          condition: condResult,
+        } as TasJumpIfZero);
+        this.emitTackyStatement((statement as IfStatement).then);
+
+        // If we have an else statement
+        if ((statement as IfStatement).else) {
+          this.instructions.push({
+            kind: "Jump",
+            label: endLabel,
+          } as TasJump);
+          this.instructions.push(elseLabel);
+          this.emitTackyStatement(
+            (statement as IfStatement).else ?? ({} as Statement),
+          );
+        }
+
+        this.instructions.push(endLabel);
         break;
       }
       case "Expression":
@@ -380,6 +426,75 @@ export class TasGenerator {
           operator: parsedExpr.operator,
         } as TasBinary);
         return dest;
+      }
+      case "Conditional": {
+        // TODO: Make `makeTempVariable` just return a TasVariable
+        // instead of a symbol
+        const condResult = {
+          kind: "Variable",
+          symbol: this.makeTempVariable(),
+        } as TasVariable;
+        const v1 = {
+          kind: "Variable",
+          symbol: this.makeTempVariable(),
+        } as TasVariable;
+        const v2 = {
+          kind: "Variable",
+          symbol: this.makeTempVariable(),
+        } as TasVariable;
+        const result = {
+          kind: "Variable",
+          symbol: this.makeTempVariable(),
+        } as TasVariable;
+
+        const elseLabel = {
+          kind: "Label",
+          symbol: this.makeLabel(),
+        } as TasLabel;
+        const endLabel = {
+          kind: "Label",
+          symbol: this.makeLabel(),
+        } as TasLabel;
+
+        const cond = this.emitTackyExpr((expr as ConditionalExpr).condition);
+
+        this.instructions.push({
+          kind: "Copy",
+          source: cond,
+          destination: condResult,
+        } as TasCopy);
+        this.instructions.push({
+          kind: "JumpIfZero",
+          label: elseLabel,
+          condition: condResult,
+        } as TasJumpIfZero);
+        this.instructions.push({
+          kind: "Copy",
+          source: this.emitTackyExpr((expr as ConditionalExpr).ifTrue),
+          destination: v1,
+        } as TasCopy);
+        this.instructions.push({
+          kind: "Copy",
+          source: v1,
+          destination: result,
+        } as TasCopy);
+        this.instructions.push({
+          kind: "Jump",
+          label: endLabel,
+        } as TasJump);
+        this.instructions.push(elseLabel);
+        this.instructions.push({
+          kind: "Copy",
+          source: this.emitTackyExpr((expr as ConditionalExpr).ifFalse),
+          destination: v2,
+        } as TasCopy);
+        this.instructions.push({
+          kind: "Copy",
+          source: v2,
+          destination: result,
+        } as TasCopy);
+        this.instructions.push(endLabel);
+        return result;
       }
       default:
         console.error("Unsupported statement kind:", expr.kind);

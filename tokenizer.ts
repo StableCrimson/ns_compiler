@@ -18,6 +18,8 @@ export enum TokenType {
   Return,
   If,
   Else,
+  Question,
+  Colon,
   Continue,
   Break,
   While,
@@ -200,6 +202,19 @@ export function tokenize(input: string): Token[] {
     // Semicolon
     if (sourceCode[0] === ";") {
       const token = { type: TokenType.Semicolon, value: ";" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+
+    if (sourceCode[0] === "?") {
+      const token = { type: TokenType.Question, value: "?" };
+      tokens.push(token);
+      sourceCode = sourceCode.slice(1).trim();
+      continue;
+    }
+    if (sourceCode[0] === ":") {
+      const token = { type: TokenType.Colon, value: ":" };
       tokens.push(token);
       sourceCode = sourceCode.slice(1).trim();
       continue;
