@@ -6,6 +6,7 @@ export type NodeType =
   | "Statement"
   | "Identifier"
   | "Expr"
+  | "Compound"
   | "Conditional"
   | "Declaration"
   | "Expression"
@@ -16,6 +17,7 @@ export type NodeType =
   | "Return"
   | "If"
   | "Null"
+  | "Block"
   | "SBlock"
   | "DBlock"
   | "NumLiteral";
@@ -56,7 +58,7 @@ export interface Program extends AstNode {
 export interface Function extends AstNode {
   kind: "Function";
   symbol: string;
-  body: Block[];
+  body: Block;
 }
 
 export interface Statement extends AstNode {
@@ -68,6 +70,11 @@ export interface Expr extends AstNode {
 }
 
 export interface Block extends AstNode {
+  kind: "Block";
+  blockItems: BlockItem[];
+}
+
+export interface BlockItem extends AstNode {
   kind: NodeType;
 }
 
@@ -130,21 +137,25 @@ export interface ExpressionStatement extends Statement {
 export interface IfStatement extends Statement {
   kind: "If";
   condition: Expr;
-  // TODO: Should become an array of statements. Maybe blocks?
   then: Statement;
   else?: Statement;
+}
+
+export interface CompoundStatement extends Statement {
+  kind: "Compound";
+  block: Block;
 }
 
 export interface Null extends Statement {
   kind: "Null";
 }
 
-export interface SBlock extends Block {
+export interface SBlock extends BlockItem {
   kind: "SBlock";
   statement: Statement;
 }
 
-export interface DBlock extends Block {
+export interface DBlock extends BlockItem {
   kind: "DBlock";
   declaration: Declaration;
 }
@@ -196,16 +207,18 @@ export class Parser {
     this.expect(TokenType.Void);
     this.expect(TokenType.CloseParenthesis);
     this.expect(TokenType.OpenBrace);
-    const body: Block[] = [];
+    const body = {
+      kind: "Block",
+      blockItems: [],
+    } as Block;
     while (this.peek().type != TokenType.CloseBrace) {
-      body.push(this.parseBlock());
+      body.blockItems.push(this.parseBlockItem());
     }
     this.expect(TokenType.CloseBrace);
-
     return { kind: "Function", symbol, body } as Function;
   }
 
-  private parseBlock(): Block {
+  private parseBlockItem(): BlockItem {
     const type = this.peek().type;
 
     switch (type) {
@@ -272,6 +285,19 @@ export class Parser {
           //this.expect(TokenType.CloseBrace);
         }
         return ifStatement;
+      }
+      case TokenType.OpenBrace: {
+        this.consume();
+        const compound = {
+          kind: "Compound",
+          block: { kind: "Block", blockItems: [] },
+        } as CompoundStatement;
+
+        while (this.peek().type != TokenType.CloseBrace) {
+          compound.block.blockItems.push(this.parseBlockItem());
+        }
+        this.consume();
+        return compound;
       }
       default: {
         const expr = {
@@ -478,12 +504,10 @@ export class Parser {
     };
 
     const precedence = precedenceMap[operator];
-
     if (!precedence) {
       console.error("Unsupported binary operator:", operator);
       Deno.exit(1);
     }
-
     return precedence;
   }
 }

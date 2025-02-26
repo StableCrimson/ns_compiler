@@ -1,6 +1,8 @@
 import {
   Assignment,
   BinaryExpr,
+  Block,
+  CompoundStatement,
   ConditionalExpr,
   DBlock,
   Declaration,
@@ -15,8 +17,14 @@ import {
   Variable,
 } from "./parser.ts";
 
+type ScopeEntry = {
+  uniqueSymbol: string;
+  inCurrentBlock: boolean;
+};
+
+type Scope = Record<string, ScopeEntry>;
+
 export class SemanticAnalyzer {
-  private variableTable: Record<string, string> = {};
   private variableCounter = 0;
 
   public semanticAnalysis(program: Program) {
@@ -27,57 +35,68 @@ export class SemanticAnalyzer {
 
   private resolveVariables(program: Program) {
     for (const func of program.body) {
-      for (const block of func.body) {
-        switch (block.kind) {
-          case "SBlock":
-            this.resolveStatement((block as SBlock).statement);
-            break;
-          case "DBlock":
-            this.resolveDecleration((block as DBlock).declaration);
-            break;
-        }
+      const scope: Scope = {};
+      this.resolveBlock(func.body, scope);
+    }
+  }
+
+  private resolveBlock(block: Block, scope: Scope) {
+    for (const item of block.blockItems) {
+      switch (item.kind) {
+        case "SBlock":
+          this.resolveStatement((item as SBlock).statement, scope);
+          break;
+        case "DBlock":
+          this.resolveDecleration((item as DBlock).declaration, scope);
+          break;
       }
     }
   }
 
-  private resolveDecleration(decl: Declaration) {
+  private resolveDecleration(decl: Declaration, scope: Scope) {
     // No duplicate variables!
-    if (this.variableTable[decl.symbol]) {
+    if (scope[decl.symbol]?.inCurrentBlock) {
       console.error("Duplicate variable declaration:", decl.symbol);
       Deno.exit(1);
     }
 
     const uniqueIdent = `var.${decl.symbol}.renamed.${this.variableCounter++}`;
-    this.variableTable[decl.symbol] = uniqueIdent;
+    scope[decl.symbol] = { uniqueSymbol: uniqueIdent, inCurrentBlock: true };
 
     // If the variable has an initializer, we need to check that, too
     // NOTE: This is undefined behavior! You can use a variable in its own initializer.
     // This is "allowed" in the C standard. Would be good to emit a warning if we
     // detect this
     if (decl.expr) {
-      this.resolveExpression(decl.expr);
+      this.resolveExpression(decl.expr, scope);
     }
     decl.symbol = uniqueIdent;
   }
 
-  private resolveStatement(statement: Statement) {
+  private resolveStatement(statement: Statement, scope: Scope) {
     switch (statement.kind) {
       case "Return":
-        this.resolveExpression((statement as ReturnStatement).value);
+        this.resolveExpression((statement as ReturnStatement).value, scope);
         break;
       case "Expression":
-        this.resolveExpression((statement as ExpressionStatement).expr);
+        this.resolveExpression((statement as ExpressionStatement).expr, scope);
         break;
-      case "If":
-        this.resolveExpression((statement as IfStatement).condition);
-        this.resolveStatement((statement as IfStatement).then);
-        if ((statement as IfStatement).else) {
+      case "Compound": {
+        const newScope = this.createInnerScope(scope);
+        const state = statement as CompoundStatement;
+        this.resolveBlock(state.block, newScope);
+        break;
+      }
+      case "If": {
+        const ifStatement = statement as IfStatement;
+        this.resolveExpression(ifStatement.condition, scope);
+        this.resolveStatement(ifStatement.then, scope);
+        if (ifStatement.else) {
           // NOTE: Else will never be undefined if we get here
-          this.resolveStatement(
-            (statement as IfStatement).else ?? ({} as Statement),
-          );
+          this.resolveStatement(ifStatement.else ?? ({} as Statement), scope);
         }
         break;
+      }
       case "Null":
         break;
       default:
@@ -86,39 +105,39 @@ export class SemanticAnalyzer {
     }
   }
 
-  private resolveExpression(expr: Expr) {
+  private resolveExpression(expr: Expr, scope: Scope) {
     switch (expr.kind) {
-      case "Assignment":
+      case "Assignment": {
         // You can't assign to a non-variable!
-        if ((expr as Assignment).left.kind != "Variable") {
-          console.error("Invalid lvalue:", expr as Assignment);
+        const assignment = expr as Assignment;
+        if (assignment.left.kind != "Variable") {
+          console.error("Invalid lvalue:", assignment);
           Deno.exit(1);
         }
-        this.resolveExpression((expr as Assignment).left);
-        this.resolveExpression((expr as Assignment).right);
+        this.resolveExpression(assignment.left, scope);
+        this.resolveExpression(assignment.right, scope);
         break;
-      case "Variable":
-        if (!this.variableTable[(expr as Variable).symbol]) {
-          console.error(
-            "Trying to use undeclared variable:",
-            (expr as Variable).symbol,
-          );
+      }
+      case "Variable": {
+        const variable = expr as Variable;
+        if (!scope[variable.symbol]) {
+          console.error("Trying to use undeclared variable:", variable.symbol);
           Deno.exit(1);
         }
-        (expr as Variable).symbol =
-          this.variableTable[(expr as Variable).symbol];
+        variable.symbol = scope[variable.symbol].uniqueSymbol;
         break;
+      }
       case "UnaryExpr":
-        this.resolveExpression((expr as UnaryExpr).expr);
+        this.resolveExpression((expr as UnaryExpr).expr, scope);
         break;
       case "BinaryExpr":
-        this.resolveExpression((expr as BinaryExpr).left);
-        this.resolveExpression((expr as BinaryExpr).right);
+        this.resolveExpression((expr as BinaryExpr).left, scope);
+        this.resolveExpression((expr as BinaryExpr).right, scope);
         break;
       case "Conditional":
-        this.resolveExpression((expr as ConditionalExpr).condition);
-        this.resolveExpression((expr as ConditionalExpr).ifTrue);
-        this.resolveExpression((expr as ConditionalExpr).ifFalse);
+        this.resolveExpression((expr as ConditionalExpr).condition, scope);
+        this.resolveExpression((expr as ConditionalExpr).ifTrue, scope);
+        this.resolveExpression((expr as ConditionalExpr).ifFalse, scope);
         break;
       case "NumLiteral":
         break;
@@ -126,5 +145,16 @@ export class SemanticAnalyzer {
         console.error("Unable to resolve expression:", expr.kind);
         Deno.exit(1);
     }
+  }
+
+  private createInnerScope(scope: Scope): Scope {
+    const newScope: Scope = {};
+    for (const key in scope) {
+      newScope[key] = {
+        uniqueSymbol: scope[key].uniqueSymbol,
+        inCurrentBlock: false,
+      } as ScopeEntry;
+    }
+    return newScope;
   }
 }

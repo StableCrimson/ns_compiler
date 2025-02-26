@@ -3,6 +3,8 @@ import {
   BinaryExpr,
   BinaryOperator,
   Block,
+  BlockItem,
+  CompoundStatement,
   ConditionalExpr,
   DBlock,
   Expr,
@@ -130,9 +132,7 @@ export class TasGenerator {
   }
 
   private generateFunction(functionNode: Function): TasFunction {
-    for (const block of functionNode.body) {
-      this.emitTackyBlock(block);
-    }
+    this.emitTackyBlock(functionNode.body);
 
     const tasFunc: TasFunction = {
       kind: "Function",
@@ -144,6 +144,12 @@ export class TasGenerator {
   }
 
   private emitTackyBlock(block: Block) {
+    for (const item of block.blockItems) {
+      this.emitTackyBlockItem(item);
+    }
+  }
+
+  private emitTackyBlockItem(block: BlockItem) {
     switch (block.kind) {
       case "DBlock":
         if ((block as DBlock).declaration.expr) {
@@ -178,6 +184,11 @@ export class TasGenerator {
         } as TasReturn);
         break;
       }
+      case "Compound": {
+        const compound = statement as CompoundStatement;
+        this.emitTackyBlock(compound.block);
+        break;
+      }
       case "If": {
         const ifStatement = statement as IfStatement;
         const condResult = this.makeTempVariable();
@@ -206,9 +217,7 @@ export class TasGenerator {
             label: endLabel,
           } as TasJump);
           this.instructions.push(elseLabel);
-          this.emitTackyStatement(
-            ifStatement.else ?? ({} as Statement),
-          );
+          this.emitTackyStatement(ifStatement.else ?? ({} as Statement));
         }
 
         this.instructions.push(endLabel);
