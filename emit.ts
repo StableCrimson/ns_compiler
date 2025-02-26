@@ -44,8 +44,9 @@ export function emit(sourceCode: AsmProgram, target: string) {
     for (const instruction of asmFunc.instructions) {
       switch (instruction.kind) {
         case "Mov": {
-          const src = getMoveOperand((instruction as Mov).source);
-          const dest = getMoveOperand((instruction as Mov).destination);
+          const instr = instruction as Mov;
+          const src = getMoveOperand(instr.source);
+          const dest = getMoveOperand(instr.destination);
           output += `  mov    ${src}, ${dest}\n`;
           break;
         }
@@ -66,19 +67,21 @@ export function emit(sourceCode: AsmProgram, target: string) {
             (instruction as Idiv).operand,
           )}\n`;
           break;
-        case "Cmp":
-          output += `  cmpl   ${getMoveOperand((instruction as Cmp).a)}  ${getMoveOperand(
-            (instruction as Cmp).b,
+        case "Cmp": {
+          const instr = instruction as Cmp;
+          output += `  cmpl   ${getMoveOperand(instr.a)}  ${getMoveOperand(
+            instr.b,
           )}\n`;
           break;
+        }
         case "Jmp":
           output += `  jmp    .L${(instruction as Jmp).label}\n`;
           break;
-        case "JmpCC":
-          output += `  j${(instruction as JmpCC).condition.padEnd(4)}  .L${
-            (instruction as Jmp).label
-          }\n`;
+        case "JmpCC": {
+          const instr = instruction as JmpCC;
+          output += `  j${instr.condition.padEnd(4)}  .L${instr.label}\n`;
           break;
+        }
         case "SetCC":
           output += `  set${(instruction as SetCC).condition.padEnd(2)}  ${getMoveOperand(
             (instruction as SetCC).operand,
@@ -98,15 +101,15 @@ export function emit(sourceCode: AsmProgram, target: string) {
               break;
           }
           break;
-        case "BinaryOperation":
-          output += `  ${getBinaryOperator(
-            instruction as BinaryOperation,
-          ).padEnd(6)} ${getMoveOperand(
-            (instruction as BinaryOperation).operand1,
-          )}, ${getMoveOperand((instruction as BinaryOperation).operand2)}\n`;
+        case "BinaryOperation": {
+          const instr = instruction as BinaryOperation;
+          output += `  ${getBinaryOperator(instr).padEnd(6)} ${getMoveOperand(
+            instr.operand1,
+          )}, ${getMoveOperand(instr.operand2)}\n`;
           break;
+        }
         default:
-          console.error("Unsupported ASM instruction:", instruction);
+          console.error("Unsupported ASM instruction:", instruction.kind);
           Deno.exit(1);
       }
     }
@@ -128,7 +131,7 @@ function getMoveOperand(val: AsmOperand): string {
     case "Imm":
       return `%${(val as Imm).value}`;
     default:
-      console.log("Unsupported asm operand", val);
+      console.log("Unsupported asm operand:", val.kind);
       Deno.exit(1);
   }
 

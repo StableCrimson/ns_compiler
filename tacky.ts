@@ -179,21 +179,13 @@ export class TasGenerator {
         break;
       }
       case "If": {
-        const condResult = {
-          kind: "Variable",
-          symbol: this.makeTempVariable(),
-        } as TasVariable;
-        const endLabel = {
-          kind: "Label",
-          symbol: this.makeLabel(),
-        } as TasLabel;
-        const elseLabel = {
-          kind: "Label",
-          symbol: this.makeLabel(),
-        } as TasLabel;
+        const ifStatement = statement as IfStatement;
+        const condResult = this.makeTempVariable();
+        const endLabel = this.makeLabel("end");
+        const elseLabel = this.makeLabel("else");
 
         // Evaluate the condition
-        const cond = this.emitTackyExpr((statement as IfStatement).condition);
+        const cond = this.emitTackyExpr(ifStatement.condition);
 
         this.instructions.push({
           kind: "Copy",
@@ -202,20 +194,20 @@ export class TasGenerator {
         } as TasCopy);
         this.instructions.push({
           kind: "JumpIfZero",
-          label: (statement as IfStatement).else ? elseLabel : endLabel,
+          label: ifStatement.else ? elseLabel : endLabel,
           condition: condResult,
         } as TasJumpIfZero);
-        this.emitTackyStatement((statement as IfStatement).then);
+        this.emitTackyStatement(ifStatement.then);
 
         // If we have an else statement
-        if ((statement as IfStatement).else) {
+        if (ifStatement.else) {
           this.instructions.push({
             kind: "Jump",
             label: endLabel,
           } as TasJump);
           this.instructions.push(elseLabel);
           this.emitTackyStatement(
-            (statement as IfStatement).else ?? ({} as Statement),
+            ifStatement.else ?? ({} as Statement),
           );
         }
 
@@ -253,7 +245,7 @@ export class TasGenerator {
         const rhs = this.emitTackyExpr(parsedExpr.right);
         const variable = {
           kind: "Variable",
-          symbol: ((expr as Assignment).left as Variable).symbol,
+          symbol: (parsedExpr.left as Variable).symbol,
         } as TasVariable;
         this.instructions.push({
           kind: "Copy",
@@ -265,8 +257,7 @@ export class TasGenerator {
       case "UnaryExpr": {
         const parsedExpr = expr as UnaryExpr;
         const source = this.emitTackyExpr(parsedExpr.expr);
-        const destSymbol = this.makeTempVariable();
-        const dest = { kind: "Variable", symbol: destSymbol } as TasVariable;
+        const dest = this.makeTempVariable();
         this.instructions.push({
           kind: "UnaryOperation",
           source,
@@ -280,26 +271,11 @@ export class TasGenerator {
 
         if (parsedExpr.operator == BinaryOperator.LogicalAnd) {
           // Setup labels and values
-          const result1 = {
-            kind: "Variable",
-            symbol: this.makeTempVariable(),
-          } as TasVariable;
-          const result2 = {
-            kind: "Variable",
-            symbol: this.makeTempVariable(),
-          } as TasVariable;
-          const expressionResult = {
-            kind: "Variable",
-            symbol: this.makeTempVariable(),
-          } as TasVariable;
-          const falseLabel = {
-            kind: "Label",
-            symbol: this.makeLabel(),
-          } as TasLabel;
-          const endLabel = {
-            kind: "Label",
-            symbol: this.makeLabel(),
-          } as TasLabel;
+          const result1 = this.makeTempVariable();
+          const result2 = this.makeTempVariable();
+          const expressionResult = this.makeTempVariable();
+          const endLabel = this.makeLabel("end");
+          const falseLabel = this.makeLabel("false");
 
           // Evaluate the first part of the condition
           const source1 = this.emitTackyExpr(parsedExpr.left);
@@ -348,26 +324,11 @@ export class TasGenerator {
 
         if (parsedExpr.operator == BinaryOperator.LogicalOr) {
           // Setup labels and values
-          const result1 = {
-            kind: "Variable",
-            symbol: this.makeTempVariable(),
-          } as TasVariable;
-          const result2 = {
-            kind: "Variable",
-            symbol: this.makeTempVariable(),
-          } as TasVariable;
-          const expressionResult = {
-            kind: "Variable",
-            symbol: this.makeTempVariable(),
-          } as TasVariable;
-          const falseLabel = {
-            kind: "Label",
-            symbol: this.makeLabel(),
-          } as TasLabel;
-          const endLabel = {
-            kind: "Label",
-            symbol: this.makeLabel(),
-          } as TasLabel;
+          const result1 = this.makeTempVariable();
+          const result2 = this.makeTempVariable();
+          const expressionResult = this.makeTempVariable();
+          const endLabel = this.makeLabel("end");
+          const falseLabel = this.makeLabel("false");
 
           // Evaluate the first part of the condition
           const source1 = this.emitTackyExpr(parsedExpr.left);
@@ -416,47 +377,26 @@ export class TasGenerator {
 
         const source1 = this.emitTackyExpr(parsedExpr.left);
         const source2 = this.emitTackyExpr(parsedExpr.right);
-        const destSymbol = this.makeTempVariable();
-        const dest = { kind: "Variable", symbol: destSymbol } as TasVariable;
+        const dest = this.makeTempVariable();
         this.instructions.push({
           kind: "BinaryOperation",
           source1,
           source2,
-          destination: dest as TasValue,
+          destination: dest,
           operator: parsedExpr.operator,
         } as TasBinary);
         return dest;
       }
       case "Conditional": {
-        // TODO: Make `makeTempVariable` just return a TasVariable
-        // instead of a symbol
-        const condResult = {
-          kind: "Variable",
-          symbol: this.makeTempVariable(),
-        } as TasVariable;
-        const v1 = {
-          kind: "Variable",
-          symbol: this.makeTempVariable(),
-        } as TasVariable;
-        const v2 = {
-          kind: "Variable",
-          symbol: this.makeTempVariable(),
-        } as TasVariable;
-        const result = {
-          kind: "Variable",
-          symbol: this.makeTempVariable(),
-        } as TasVariable;
+        const parsedExpr = expr as ConditionalExpr;
+        const condResult = this.makeTempVariable();
+        const v1 = this.makeTempVariable();
+        const v2 = this.makeTempVariable();
+        const result = this.makeTempVariable();
 
-        const elseLabel = {
-          kind: "Label",
-          symbol: this.makeLabel(),
-        } as TasLabel;
-        const endLabel = {
-          kind: "Label",
-          symbol: this.makeLabel(),
-        } as TasLabel;
-
-        const cond = this.emitTackyExpr((expr as ConditionalExpr).condition);
+        const elseLabel = this.makeLabel("else");
+        const endLabel = this.makeLabel("end");
+        const cond = this.emitTackyExpr(parsedExpr.condition);
 
         this.instructions.push({
           kind: "Copy",
@@ -470,7 +410,7 @@ export class TasGenerator {
         } as TasJumpIfZero);
         this.instructions.push({
           kind: "Copy",
-          source: this.emitTackyExpr((expr as ConditionalExpr).ifTrue),
+          source: this.emitTackyExpr(parsedExpr.ifTrue),
           destination: v1,
         } as TasCopy);
         this.instructions.push({
@@ -485,7 +425,7 @@ export class TasGenerator {
         this.instructions.push(elseLabel);
         this.instructions.push({
           kind: "Copy",
-          source: this.emitTackyExpr((expr as ConditionalExpr).ifFalse),
+          source: this.emitTackyExpr(parsedExpr.ifFalse),
           destination: v2,
         } as TasCopy);
         this.instructions.push({
@@ -505,14 +445,21 @@ export class TasGenerator {
     return {} as TasValue;
   }
 
-  private makeTempVariable(): string {
+  private makeTempVariable(): TasVariable {
     // Variables with a '.' are invalid in C source code.
     // So naming the symbols AFTER parsing ensures the
     // temp variable name won't conflict with the user-defined ones
-    return `temp.v${this.tempVariableCounter++}`;
+    return {
+      kind: "Variable",
+      symbol: `temp.v${this.tempVariableCounter++}`,
+    } as TasVariable;
   }
 
-  private makeLabel(): string {
-    return `label_l${this.labelCounter++}`;
+  private makeLabel(prefix: string | undefined = undefined): TasLabel {
+    const labelName = prefix ?? "label";
+    return {
+      kind: "Label",
+      symbol: `${labelName}_${this.labelCounter++}`,
+    } as TasLabel;
   }
 }
