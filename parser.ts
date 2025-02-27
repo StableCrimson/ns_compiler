@@ -1,4 +1,5 @@
 import { Token, tokenize, TokenType } from "./tokenizer.ts";
+import { bail } from "./utils.ts";
 
 export type NodeType =
   | "Program"
@@ -184,6 +185,17 @@ export class Parser {
     return token;
   }
 
+  // Returns whether or not the next token is a given type.
+  // If consume is true, it will consume the token if it
+  // is next
+  private isNext(token: TokenType, consume: boolean = false): boolean {
+    const isNext = this.peek().type == token;
+    if (consume && isNext) {
+      this.consume();
+    }
+    return isNext;
+  }
+
   public produceAst(sourceCode: string): Program {
     this.tokens = tokenize(sourceCode);
 
@@ -242,8 +254,7 @@ export class Parser {
       kind: "Declaration",
       symbol: ident.value,
     } as Declaration;
-    if (this.peek().type == TokenType.Equal) {
-      this.consume();
+    if (this.isNext(TokenType.Equal, true)) {
       decl.expr = this.parseExpr();
     }
     this.expect(TokenType.Semicolon);
@@ -268,9 +279,7 @@ export class Parser {
         this.expect(TokenType.OpenParenthesis);
         const condition = this.parseExpr();
         this.expect(TokenType.CloseParenthesis);
-        //this.expect(TokenType.OpenBrace);
         const body = this.parseStatement();
-        //this.expect(TokenType.CloseBrace);
 
         const ifStatement = {
           kind: "If",
@@ -278,11 +287,8 @@ export class Parser {
           then: body,
         } as IfStatement;
 
-        if (this.peek().type == TokenType.Else) {
-          this.consume();
-          //this.expect(TokenType.OpenBrace);
+        if (this.isNext(TokenType.Else, true)) {
           ifStatement.else = this.parseStatement();
-          //this.expect(TokenType.CloseBrace);
         }
         return ifStatement;
       }
@@ -293,7 +299,7 @@ export class Parser {
           block: { kind: "Block", blockItems: [] },
         } as CompoundStatement;
 
-        while (this.peek().type != TokenType.CloseBrace) {
+        while (!this.isNext(TokenType.CloseBrace)) {
           compound.block.blockItems.push(this.parseBlockItem());
         }
         this.consume();
@@ -320,7 +326,7 @@ export class Parser {
       this.precedence(this.nextBinOp(false)) >= minimumPrecedence
     ) {
       // Assignments are right associative and need to be handled slightly differently
-      if (this.peek().type == TokenType.Equal) {
+      if (this.isNext(TokenType.Equal)) {
         const right = this.parseExpr(this.precedence(this.nextBinOp(true)));
         left = {
           kind: "Assignment",
@@ -331,8 +337,7 @@ export class Parser {
       }
 
       // Ternary operators
-      if (this.peek().type == TokenType.Question) {
-        this.consume();
+      if (this.isNext(TokenType.Question, true)) {
         const middle = this.parseExpr();
         this.expect(TokenType.Colon);
         const falseTrack = this.parseExpr(
@@ -410,8 +415,7 @@ export class Parser {
         } as UnaryExpr;
       }
       default:
-        console.error("Unknown expression type:", TokenType[type]);
-        Deno.exit(1);
+        bail(`ParseError: Unexpected expression type: ${TokenType[type]}`);
     }
 
     // NOTE: Unreachable, just to make the TS compiler happy
@@ -476,8 +480,7 @@ export class Parser {
       case TokenType.Question:
         return BinaryOperator.Ternary;
       default:
-        console.error("Expected binary operator:", token);
-        Deno.exit(1);
+        bail(`ParseError: Expected binary operator, got: ${token}`);
     }
 
     // NOTE unreachable
@@ -505,8 +508,7 @@ export class Parser {
 
     const precedence = precedenceMap[operator];
     if (!precedence) {
-      console.error("Unsupported binary operator:", operator);
-      Deno.exit(1);
+      bail(`ParseError: Unexpected binary operator: ${operator}`);
     }
     return precedence;
   }

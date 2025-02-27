@@ -20,6 +20,7 @@ import {
   UnaryOperator,
   Variable,
 } from "./parser.ts";
+import { bail } from "./utils.ts";
 
 type InstructionType =
   | "Copy"
@@ -233,8 +234,7 @@ export class TasGenerator {
       case "Null":
         break;
       default:
-        console.error("Unsupported statement type:", statement.kind);
-        Deno.exit(1);
+        bail(`TAS: Unsupported statement kind: ${statement.kind}`);
     }
   }
 
@@ -446,8 +446,7 @@ export class TasGenerator {
         return result;
       }
       default:
-        console.error("Unsupported statement kind:", expr.kind);
-        Deno.exit(1);
+        bail(`TAS: Unsupported expression kind: ${expr.kind}`);
     }
 
     // NOTE: Unreachable, just for the TS compiler

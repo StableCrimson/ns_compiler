@@ -15,6 +15,7 @@ import {
   TasValue,
   TasVariable,
 } from "./tacky.ts";
+import { bail } from "./utils.ts";
 
 export enum Register {
   AX = "eax",
@@ -330,8 +331,7 @@ function generateFunction(functionNode: TasFunction): AsmFunction {
         continue;
       }
       default:
-        console.error("Unsupported statement kind:", instruction.kind);
-        Deno.exit(1);
+        bail(`Codegen: Unsupported statement kind: ${instruction.kind}`);
     }
   }
 
@@ -508,8 +508,7 @@ function replacePseudoregisters(asmFunc: AsmFunction) {
         fixedInstructions.push(instruction);
         continue;
       default:
-        console.error("Unknown AsmInstruction:", instruction);
-        Deno.exit(1);
+        bail(`Codegen: Unsupported AsmInstruction: ${instruction}`);
     }
   }
 

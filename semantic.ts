@@ -16,6 +16,7 @@ import {
   UnaryExpr,
   Variable,
 } from "./parser.ts";
+import { bail } from "./utils.ts";
 
 type ScopeEntry = {
   uniqueSymbol: string;
@@ -56,8 +57,9 @@ export class SemanticAnalyzer {
   private resolveDecleration(decl: Declaration, scope: Scope) {
     // No duplicate variables!
     if (scope[decl.symbol]?.inCurrentBlock) {
-      console.error("Duplicate variable declaration:", decl.symbol);
-      Deno.exit(1);
+      bail(
+        `VariableResolution: Duplicate variable declaration: ${decl.symbol}`,
+      );
     }
 
     const uniqueIdent = `var.${decl.symbol}.renamed.${this.variableCounter++}`;
@@ -100,8 +102,9 @@ export class SemanticAnalyzer {
       case "Null":
         break;
       default:
-        console.error("Unable to resolve statement:", statement.kind);
-        Deno.exit(1);
+        bail(
+          `VariableResolution: Unable to resolve statement: ${statement.kind}`,
+        );
     }
   }
 
@@ -111,8 +114,7 @@ export class SemanticAnalyzer {
         // You can't assign to a non-variable!
         const assignment = expr as Assignment;
         if (assignment.left.kind != "Variable") {
-          console.error("Invalid lvalue:", assignment);
-          Deno.exit(1);
+          bail(`VariableResolution: Invalid lvalue: ${assignment}`);
         }
         this.resolveExpression(assignment.left, scope);
         this.resolveExpression(assignment.right, scope);
@@ -121,8 +123,9 @@ export class SemanticAnalyzer {
       case "Variable": {
         const variable = expr as Variable;
         if (!scope[variable.symbol]) {
-          console.error("Trying to use undeclared variable:", variable.symbol);
-          Deno.exit(1);
+          bail(
+            `VariableResolution: Attempting to use undeclared variable: ${variable.symbol}`,
+          );
         }
         variable.symbol = scope[variable.symbol].uniqueSymbol;
         break;
@@ -142,8 +145,7 @@ export class SemanticAnalyzer {
       case "NumLiteral":
         break;
       default:
-        console.error("Unable to resolve expression:", expr.kind);
-        Deno.exit(1);
+        bail(`VariableResolution: Unable to resolve expression: ${expr.kind}`);
     }
   }
 

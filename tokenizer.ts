@@ -1,3 +1,5 @@
+import { bail } from "./utils.ts";
+
 const IDENTIFIER = /[a-zA-Z_]\w*\b/;
 const CONSTANT = /[0-9]+\b/;
 const COMMENT = /\/\/.*/;
@@ -441,8 +443,7 @@ export function tokenize(input: string): Token[] {
     }
 
     // We weren't able to match the current token, bail
-    console.error("Unexpected token: " + sourceCode);
-    Deno.exit(1);
+    bail(`LexError: Unexpected token: ${sourceCode}`);
   }
 
   tokens.push({ type: TokenType.EOF, value: "End of file" });
