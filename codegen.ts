@@ -526,7 +526,7 @@ function getStackOffset(pseudoReg: PseudoReg, symbols: string[]): number {
 
   if (!symbols.includes(symbol)) {
     symbols.push(symbol);
-    return (symbols.length - 1) * -4;
+    return symbols.length * -4;
   }
 
   return symbols.indexOf(symbol) * -4;
@@ -767,6 +767,5 @@ function fixupInvalidInstructions(asmFunc: AsmFunction) {
         fixedInstructions.push(instruction);
     }
   }
-
   asmFunc.instructions = fixedInstructions;
 }
