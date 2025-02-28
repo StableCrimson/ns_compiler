@@ -4,11 +4,17 @@ import {
   BinaryOperator,
   Block,
   BlockItem,
+  Break,
   CompoundStatement,
   ConditionalExpr,
+  Continue,
   DBlock,
+  Declaration,
+  DoWhileStatement,
   Expr,
   ExpressionStatement,
+  ForInit,
+  ForStatement,
   Function,
   IfStatement,
   NumLiteral,
@@ -19,6 +25,7 @@ import {
   UnaryExpr,
   UnaryOperator,
   Variable,
+  WhileStatement,
 } from "./parser.ts";
 import { bail } from "./utils.ts";
 
@@ -148,27 +155,36 @@ export class TasGenerator {
     }
   }
 
+  private emitTackyForInit(init: ForInit) {
+    if (init.init?.kind == "Declaration") {
+      this.emitTackyDeclaration(init.init as Declaration)
+    } else if (init.init) {
+      this.emitTackyExpr(init.init as Expr);
+    }
+  }
+
   private emitTackyBlockItem(block: BlockItem) {
     switch (block.kind) {
       case "DBlock":
-        if ((block as DBlock).declaration.expr) {
-          // NOTE: This expression will never be undefined if we make it here
-          const value = this.emitTackyExpr(
-            (block as DBlock).declaration.expr ?? ({} as Expr),
-          );
-          this.instructions.push({
-            kind: "Copy",
-            source: value,
-            destination: {
-              kind: "Variable",
-              symbol: (block as DBlock).declaration.symbol,
-            } as TasVariable,
-          } as TasCopy);
-        }
+        this.emitTackyDeclaration((block as DBlock).declaration);
         break;
       case "SBlock":
         this.emitTackyStatement((block as SBlock).statement);
         break;
+    }
+  }
+
+  private emitTackyDeclaration(declaration: Declaration) {
+    if (declaration.expr) {
+      const value = this.emitTackyExpr(declaration.expr);
+      this.instructions.push({
+        kind: "Copy",
+        source: value,
+        destination: {
+          kind: "Variable",
+          symbol: declaration.symbol,
+        } as TasVariable,
+      } as TasCopy);
     }
   }
 
@@ -222,6 +238,138 @@ export class TasGenerator {
         this.instructions.push(endLabel);
         break;
       }
+      case "While": {
+        const parsedStatement = statement as WhileStatement;
+        const breakLabel = {
+          kind: "Label",
+          symbol: `${parsedStatement.label}_break`,
+        } as TasLabel;
+        const continueLabel = {
+          kind: "Label",
+          symbol: `${parsedStatement.label}_continue`,
+        } as TasLabel;
+        this.instructions.push(continueLabel);
+        const cond = this.emitTackyExpr(parsedStatement.condition);
+        const condResult = this.makeTempVariable();
+        this.instructions.push({
+          kind: "Copy",
+          source: cond,
+          destination: condResult,
+        } as TasCopy);
+        // If condition is not met, end the loop
+        this.instructions.push({
+          kind: "JumpIfZero",
+          condition: condResult,
+          label: breakLabel,
+        } as TasJumpIfZero);
+        this.emitTackyStatement(parsedStatement.body);
+        this.instructions.push({
+          kind: "Jump",
+          label: continueLabel,
+        } as TasJump);
+        this.instructions.push(breakLabel);
+        break;
+      }
+      case "DoWhile": {
+        const parsedStatement = statement as DoWhileStatement;
+        const startLabel = {
+          kind: "Label",
+          symbol: `${parsedStatement.label}_start`,
+        } as TasLabel;
+        const breakLabel = {
+          kind: "Label",
+          symbol: `${parsedStatement.label}_break`,
+        } as TasLabel;
+        const continueLabel = {
+          kind: "Label",
+          symbol: `${parsedStatement.label}_continue`,
+        } as TasLabel;
+        this.instructions.push(startLabel);
+        this.emitTackyStatement(parsedStatement.body);
+        this.instructions.push(continueLabel);
+        const cond = this.emitTackyExpr(parsedStatement.condition);
+        const condResult = this.makeTempVariable();
+        this.instructions.push({
+          kind: "Copy",
+          source: cond,
+          destination: condResult,
+        } as TasCopy);
+        // If condition is not met, end the loop
+        this.instructions.push({
+          kind: "JumpIfNotZero",
+          condition: condResult,
+          label: startLabel,
+        } as TasJumpIfNotZero);
+        this.instructions.push(breakLabel);
+        break;
+      }
+      case "For": {
+        const parsedStatement = statement as ForStatement;
+        const init = parsedStatement.init;
+        const startLabel = {
+          kind: "Label",
+          symbol: `${parsedStatement.label}_start`,
+        } as TasLabel;
+        const breakLabel = {
+          kind: "Label",
+          symbol: `${parsedStatement.label}_break`,
+        } as TasLabel;
+        const continueLabel = {
+          kind: "Label",
+          symbol: `${parsedStatement.label}_continue`,
+        } as TasLabel;
+
+        this.emitTackyForInit(parsedStatement.init);
+        this.instructions.push(startLabel);
+
+        // If there is a condition expression, use that instead
+        // In the C standard, if a condition is not provided, you
+        // should just use a non-zero constant. However doing that would
+        // just add a vestigial instruction (a jump that would never be made),
+        // so it's more efficient for us to omit the jump entirely
+        if (parsedStatement.condition) {
+          const cond = this.emitTackyExpr(parsedStatement.condition);
+          const condResult = this.makeTempVariable();
+
+          this.instructions.push({
+            kind: "Copy",
+            source: cond,
+            destination: condResult,
+          } as TasCopy);
+          // If condition is not met, end the loop
+          this.instructions.push({
+            kind: "JumpIfZero",
+            condition: condResult,
+            label: breakLabel,
+          } as TasJumpIfZero);
+        }
+        this.emitTackyStatement(parsedStatement.body);
+        this.instructions.push(continueLabel);
+        if (parsedStatement.post) {
+          this.emitTackyExpr(parsedStatement.post);
+        }
+        this.instructions.push({ kind: "Jump", label: startLabel } as TasJump);
+        this.instructions.push(breakLabel);
+        break;
+      }
+      case "Break":
+        this.instructions.push({
+          kind: "Jump",
+          label: {
+            kind: "Label",
+            symbol: `${(statement as Break).label}_break`,
+          } as TasLabel,
+        } as TasJump);
+        break;
+      case "Continue":
+        this.instructions.push({
+          kind: "Jump",
+          label: {
+            kind: "Label",
+            symbol: `${(statement as Continue).label}_continue`,
+          } as TasLabel,
+        } as TasJump);
+        break;
       case "Expression":
         this.emitTackyExpr((statement as ExpressionStatement).expr);
         break;

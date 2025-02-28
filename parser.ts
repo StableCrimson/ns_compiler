@@ -17,6 +17,12 @@ export type NodeType =
   | "BinaryExpr"
   | "Return"
   | "If"
+  | "While"
+  | "DoWhile"
+  | "For"
+  | "ForInit"
+  | "Break"
+  | "Continue"
   | "Null"
   | "Block"
   | "SBlock"
@@ -139,6 +145,44 @@ export interface IfStatement extends Statement {
   condition: Expr;
   then: Statement;
   else?: Statement;
+}
+
+export interface WhileStatement extends Statement {
+  kind: "While";
+  condition: Expr;
+  body: Statement;
+  label?: string;
+}
+
+export interface DoWhileStatement extends Statement {
+  kind: "DoWhile";
+  condition: Expr;
+  body: Statement;
+  label?: string;
+}
+
+export interface ForStatement extends Statement {
+  kind: "For";
+  init: ForInit;
+  condition?: Expr;
+  post?: Expr;
+  body: Statement;
+  label?: string;
+}
+
+export interface Continue extends Statement {
+  kind: "Continue";
+  label?: string;
+}
+
+export interface Break extends Statement {
+  kind: "Break";
+  label?: string;
+}
+
+export interface ForInit extends Statement {
+  kind: "ForInit";
+  init: Declaration | Expr | undefined;
 }
 
 export interface CompoundStatement extends Statement {
@@ -271,6 +315,27 @@ export class Parser {
     return decl;
   }
 
+  private parseForInit(): ForInit {
+    const init = {
+      kind: "ForInit",
+      line: this.peek().line,
+    } as ForInit;
+
+    if (this.isNext(TokenType.Int)) {
+      init.init = this.parseDeclaration();
+      return init;
+    }
+    init.init = this.parseOptionalExpr(TokenType.Semicolon);
+    this.expect(TokenType.Semicolon);
+    return init;
+  }
+
+  private parseOptionalExpr(nextToken: TokenType): Expr | undefined {
+    if (!this.isNext(nextToken)) {
+      return this.parseExpr();
+    }
+  }
+
   private parseStatement(): Statement {
     const token = this.peek();
 
@@ -320,6 +385,59 @@ export class Parser {
         }
         this.consume();
         return compound;
+      }
+      case TokenType.While: {
+        this.consume();
+        this.expect(TokenType.OpenParenthesis);
+        const condition = this.parseExpr();
+        this.expect(TokenType.CloseParenthesis);
+        return {
+          kind: "While",
+          condition,
+          body: this.parseStatement(),
+          line: token.line,
+        } as WhileStatement;
+      }
+      case TokenType.Do: {
+        this.consume();
+        const statement = {
+          kind: "DoWhile",
+          body: this.parseStatement(),
+          line: token.line,
+        } as DoWhileStatement;
+        this.expect(TokenType.While);
+        this.expect(TokenType.OpenParenthesis);
+        statement.condition = this.parseExpr();
+        this.expect(TokenType.CloseParenthesis);
+        this.expect(TokenType.Semicolon);
+        return statement;
+      }
+      case TokenType.For: {
+        this.consume();
+        this.expect(TokenType.OpenParenthesis);
+        const statement = {
+          kind: "For",
+          init: this.parseForInit(),
+          line: token.line,
+        } as ForStatement;
+        statement.condition = this.parseOptionalExpr(TokenType.Semicolon);
+        this.expect(TokenType.Semicolon);
+        statement.post = this.parseOptionalExpr(TokenType.CloseParenthesis);
+        this.expect(TokenType.CloseParenthesis);
+        statement.body = this.parseStatement();
+        return statement;
+      }
+      case TokenType.Break: {
+        this.consume();
+        const statement = { kind: "Break", line: token.line } as Break;
+        this.expect(TokenType.Semicolon);
+        return statement;
+      }
+      case TokenType.Continue: {
+        this.consume();
+        const statement = { kind: "Continue", line: token.line } as Continue;
+        this.expect(TokenType.Semicolon);
+        return statement;
       }
       default: {
         const expr = {

@@ -3,7 +3,7 @@ import { Parser } from "./parser.ts";
 import { generateAsmTree } from "./codegen.ts";
 import { emit } from "./emit.ts";
 import { TasGenerator } from "./tacky.ts";
-import { SemanticAnalyzer } from "./semantic.ts";
+import { semanticAnalysis } from "./semanticAnalysis/semanticAnalyzer.ts";
 
 const args = Deno.args;
 
@@ -17,7 +17,6 @@ const fileContents = await Deno.readTextFile(filePath);
 
 const lexer = new Lexer();
 const parser = new Parser();
-const analyzer = new SemanticAnalyzer();
 const tasGenerator = new TasGenerator();
 
 let tokens, ast, tas, asmTree;
@@ -37,13 +36,13 @@ switch (args[0]) {
   case "--validate":
     tokens = lexer.tokenize(fileContents);
     ast = parser.produceAst(tokens);
-    analyzer.semanticAnalysis(ast);
+    semanticAnalysis(ast);
     console.dir(ast, { depth: null });
     break;
   case "--tacky":
     tokens = lexer.tokenize(fileContents);
     ast = parser.produceAst(tokens);
-    analyzer.semanticAnalysis(ast);
+    semanticAnalysis(ast);
     tas = tasGenerator.generateTas(ast);
     console.dir(tas, {
       depth: null,
@@ -52,7 +51,7 @@ switch (args[0]) {
   case "--codegen":
     tokens = lexer.tokenize(fileContents);
     ast = parser.produceAst(tokens);
-    analyzer.semanticAnalysis(ast);
+    semanticAnalysis(ast);
     tas = tasGenerator.generateTas(ast);
     asmTree = generateAsmTree(tas);
     console.dir(asmTree, {
@@ -62,7 +61,7 @@ switch (args[0]) {
   default: {
     tokens = lexer.tokenize(fileContents);
     ast = parser.produceAst(tokens);
-    analyzer.semanticAnalysis(ast);
+    semanticAnalysis(ast);
     tas = tasGenerator.generateTas(ast);
     asmTree = generateAsmTree(tas);
     // TODO: Make this path configurable

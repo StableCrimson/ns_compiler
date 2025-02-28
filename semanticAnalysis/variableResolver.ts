@@ -6,8 +6,11 @@ import {
   ConditionalExpr,
   DBlock,
   Declaration,
+  DoWhileStatement,
   Expr,
   ExpressionStatement,
+  ForInit,
+  ForStatement,
   IfStatement,
   Program,
   ReturnStatement,
@@ -15,8 +18,9 @@ import {
   Statement,
   UnaryExpr,
   Variable,
-} from "./parser.ts";
-import { bail } from "./utils.ts";
+  WhileStatement,
+} from "../parser.ts";
+import { bail } from "../utils.ts";
 
 type ScopeEntry = {
   uniqueSymbol: string;
@@ -25,16 +29,10 @@ type ScopeEntry = {
 
 type Scope = Record<string, ScopeEntry>;
 
-export class SemanticAnalyzer {
+export class VariableResolver {
   private variableCounter = 0;
 
-  public semanticAnalysis(program: Program) {
-    // Make sure variable declarations and accesses are valid
-    // Also makes sure all variable names are globally unique
-    this.resolveVariables(program);
-  }
-
-  private resolveVariables(program: Program) {
+  public resolveVariables(program: Program) {
     for (const func of program.body) {
       const scope: Scope = {};
       this.resolveBlock(func.body, scope);
@@ -51,6 +49,17 @@ export class SemanticAnalyzer {
           this.resolveDecleration((item as DBlock).declaration, scope);
           break;
       }
+    }
+  }
+
+  private resolveForInit(init: ForInit, scope: Scope) {
+    switch (init.init?.kind) {
+      case "Declaration":
+        this.resolveDecleration(init.init as Declaration, scope);
+        break;
+      case "Expr":
+        this.resolveExpression(init.init as Expr, scope);
+        break;
     }
   }
 
@@ -99,7 +108,34 @@ export class SemanticAnalyzer {
         }
         break;
       }
+      case "While": {
+        const whileStatement = statement as WhileStatement;
+        this.resolveExpression(whileStatement.condition, scope);
+        this.resolveStatement(whileStatement.body, scope);
+        break;
+      }
+      case "DoWhile": {
+        const doWhileStatement = statement as DoWhileStatement;
+        this.resolveStatement(doWhileStatement.body, scope);
+        this.resolveExpression(doWhileStatement.condition, scope);
+        break;
+      }
+      case "For": {
+        const forStatement = statement as ForStatement;
+        const newScope = this.createInnerScope(scope);
+        this.resolveForInit(forStatement.init, newScope);
+        if (forStatement.condition) {
+          this.resolveExpression(forStatement.condition, newScope);
+        }
+        if (forStatement.post) {
+          this.resolveExpression(forStatement.post, newScope);
+        }
+        this.resolveStatement(forStatement.body, newScope);
+        break;
+      }
       case "Null":
+      case "Continue":
+      case "Break":
         break;
       default:
         bail(
