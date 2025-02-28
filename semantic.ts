@@ -58,7 +58,7 @@ export class SemanticAnalyzer {
     // No duplicate variables!
     if (scope[decl.symbol]?.inCurrentBlock) {
       bail(
-        `VariableResolution: Duplicate variable declaration: ${decl.symbol}`,
+        `VariableResolution error on line ${decl.line}: Duplicate variable declaration: ${decl.symbol}`,
       );
     }
 
@@ -103,7 +103,7 @@ export class SemanticAnalyzer {
         break;
       default:
         bail(
-          `VariableResolution: Unable to resolve statement: ${statement.kind}`,
+          `VariableResolution error on line ${statement.line}: Unable to resolve statement: ${statement.kind}`,
         );
     }
   }
@@ -114,7 +114,9 @@ export class SemanticAnalyzer {
         // You can't assign to a non-variable!
         const assignment = expr as Assignment;
         if (assignment.left.kind != "Variable") {
-          bail(`VariableResolution: Invalid lvalue: ${assignment}`);
+          bail(
+            `VariableResolution error on line ${assignment.line}: Invalid lvalue: ${assignment.left.kind}`,
+          );
         }
         this.resolveExpression(assignment.left, scope);
         this.resolveExpression(assignment.right, scope);
@@ -124,7 +126,7 @@ export class SemanticAnalyzer {
         const variable = expr as Variable;
         if (!scope[variable.symbol]) {
           bail(
-            `VariableResolution: Attempting to use undeclared variable: ${variable.symbol}`,
+            `VariableResolution error on line ${variable.line}: Attempting to use undeclared variable: ${variable.symbol}`,
           );
         }
         variable.symbol = scope[variable.symbol].uniqueSymbol;
@@ -145,7 +147,9 @@ export class SemanticAnalyzer {
       case "NumLiteral":
         break;
       default:
-        bail(`VariableResolution: Unable to resolve expression: ${expr.kind}`);
+        bail(
+          `VariableResolution error on line ${expr.line}: Unable to resolve expression: ${expr.kind}`,
+        );
     }
   }
 
