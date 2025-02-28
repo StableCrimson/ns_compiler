@@ -15,6 +15,7 @@ import {
   TasValue,
   TasVariable,
 } from "./tacky.ts";
+import { bail } from "./utils.ts";
 
 export enum Register {
   AX = "eax",
@@ -48,20 +49,18 @@ type AsmInstructionKind =
 
 type AsmOperandKind = "Imm" | "PseudoReg" | "Stack" | "Reg";
 
-interface AsmConstruct {}
-
-export interface AsmProgram extends AsmConstruct {
+export interface AsmProgram {
   kind: "Program";
   body: AsmFunction[];
 }
 
-export interface AsmFunction extends AsmConstruct {
+export interface AsmFunction {
   kind: "Function";
   symbol: string;
   instructions: AsmInstruction[];
 }
 
-export interface AsmInstruction extends AsmConstruct {
+export interface AsmInstruction {
   kind: AsmInstructionKind;
 }
 
@@ -130,7 +129,7 @@ export interface Cmp extends AsmInstruction {
   b: AsmOperand;
 }
 
-export interface AsmOperand extends AsmConstruct {
+export interface AsmOperand {
   kind: AsmOperandKind;
 }
 
@@ -330,8 +329,7 @@ function generateFunction(functionNode: TasFunction): AsmFunction {
         continue;
       }
       default:
-        console.error("Unsupported statement kind:", instruction.kind);
-        Deno.exit(1);
+        bail(`Codegen: Unsupported statement kind: ${instruction.kind}`);
     }
   }
 
@@ -508,8 +506,7 @@ function replacePseudoregisters(asmFunc: AsmFunction) {
         fixedInstructions.push(instruction);
         continue;
       default:
-        console.error("Unknown AsmInstruction:", instruction);
-        Deno.exit(1);
+        bail(`Codegen: Unsupported AsmInstruction: ${instruction}`);
     }
   }
 
@@ -529,7 +526,7 @@ function getStackOffset(pseudoReg: PseudoReg, symbols: string[]): number {
 
   if (!symbols.includes(symbol)) {
     symbols.push(symbol);
-    return (symbols.length - 1) * -4;
+    return symbols.length * -4;
   }
 
   return symbols.indexOf(symbol) * -4;
@@ -770,6 +767,5 @@ function fixupInvalidInstructions(asmFunc: AsmFunction) {
         fixedInstructions.push(instruction);
     }
   }
-
   asmFunc.instructions = fixedInstructions;
 }

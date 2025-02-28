@@ -20,6 +20,7 @@ import {
   UnaryOperator,
   Variable,
 } from "./parser.ts";
+import { bail } from "./utils.ts";
 
 type InstructionType =
   | "Copy"
@@ -32,24 +33,22 @@ type InstructionType =
   | "Return";
 type TasValueKind = "Constant" | "Variable";
 
-interface TasConstruct {}
-
-export interface TasProgram extends TasConstruct {
+export interface TasProgram {
   kind: "Program";
   body: TasFunction[];
 }
 
-export interface TasFunction extends TasConstruct {
+export interface TasFunction {
   kind: "Function";
   symbol: string;
   instructions: TasInstruction[];
 }
 
-export interface TasInstruction extends TasConstruct {
+export interface TasInstruction {
   kind: InstructionType;
 }
 
-export interface TasValue extends TasConstruct {
+export interface TasValue {
   kind: TasValueKind;
 }
 
@@ -233,8 +232,7 @@ export class TasGenerator {
       case "Null":
         break;
       default:
-        console.error("Unsupported statement type:", statement.kind);
-        Deno.exit(1);
+        bail(`TAS: Unsupported statement kind: ${statement.kind}`);
     }
   }
 
@@ -446,8 +444,7 @@ export class TasGenerator {
         return result;
       }
       default:
-        console.error("Unsupported statement kind:", expr.kind);
-        Deno.exit(1);
+        bail(`TAS: Unsupported expression kind: ${expr.kind}`);
     }
 
     // NOTE: Unreachable, just for the TS compiler

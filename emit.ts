@@ -16,6 +16,7 @@ import {
   UnaryOperation,
 } from "./codegen.ts";
 import { BinaryOperator, UnaryOperator } from "./parser.ts";
+import { bail } from "./utils.ts";
 
 enum UnaryAsmInstruction {
   Negation = "  negl\n",
@@ -109,8 +110,7 @@ export function emit(sourceCode: AsmProgram, target: string) {
           break;
         }
         default:
-          console.error("Unsupported ASM instruction:", instruction.kind);
-          Deno.exit(1);
+          bail(`Emission: Unsupported ASM instruction: ${instruction.kind}`);
       }
     }
   }
@@ -131,8 +131,7 @@ function getMoveOperand(val: AsmOperand): string {
     case "Imm":
       return `%${(val as Imm).value}`;
     default:
-      console.log("Unsupported asm operand:", val.kind);
-      Deno.exit(1);
+      bail(`Emission: Unsupported ASM Operand: ${val.kind}`);
   }
 
   // NOTE: Unreachable. To make TS happy.
@@ -148,8 +147,7 @@ function getBinaryOperator(ins: BinaryOperation): BinaryAsmInstruction {
     case BinaryOperator.Multiply:
       return BinaryAsmInstruction.Multiply;
     default:
-      console.error("Unsupported binary operator:", ins.operator);
-      Deno.exit(1);
+      bail(`Emission: Unsupported binary operator: ${ins.operator}`);
   }
   // NOTE: Unreachable
   return {} as BinaryAsmInstruction;

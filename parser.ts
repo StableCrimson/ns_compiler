@@ -1,4 +1,5 @@
-import { Token, tokenize, TokenType } from "./tokenizer.ts";
+import { Token, TokenType } from "./tokenizer.ts";
+import { bail } from "./utils.ts";
 
 export type NodeType =
   | "Program"
@@ -48,6 +49,7 @@ export enum BinaryOperator {
 
 interface AstNode {
   kind: NodeType;
+  line?: number;
 }
 
 export interface Program extends AstNode {
@@ -84,9 +86,7 @@ export interface Declaration extends AstNode {
   expr?: Expr;
 }
 
-export interface Factor extends Expr {
-  kind: NodeType;
-}
+export interface Factor extends Expr {}
 
 export interface Variable extends Expr {
   kind: "Variable";
@@ -177,22 +177,35 @@ export class Parser {
 
     if (token.type !== type) {
       throw new Error(
-        `Expected ${TokenType[type]} but got ${TokenType[token.type]}`,
+        `Line ${token.line}: Expected ${TokenType[type]} but got ${
+          TokenType[token.type]
+        }`,
       );
     }
 
     return token;
   }
 
-  public produceAst(sourceCode: string): Program {
-    this.tokens = tokenize(sourceCode);
+  // Returns whether or not the next token is a given type.
+  // If consume is true, it will consume the token if it
+  // is next
+  private isNext(token: TokenType, consume: boolean = false): boolean {
+    const isNext = this.peek().type == token;
+    if (consume && isNext) {
+      this.consume();
+    }
+    return isNext;
+  }
+
+  public produceAst(sourceCode: Token[]): Program {
+    this.tokens = sourceCode;
 
     const program: Program = {
       kind: "Program",
       body: [],
     };
 
-    while (this.tokens.length > 0 && this.peek().type !== TokenType.EOF) {
+    while (this.tokens.length > 0 && !this.isNext(TokenType.EOF)) {
       program.body.push(this.parseFunction());
     }
 
@@ -210,12 +223,18 @@ export class Parser {
     const body = {
       kind: "Block",
       blockItems: [],
+      line: this.peek().line,
     } as Block;
-    while (this.peek().type != TokenType.CloseBrace) {
+    while (!this.isNext(TokenType.CloseBrace)) {
       body.blockItems.push(this.parseBlockItem());
     }
     this.expect(TokenType.CloseBrace);
-    return { kind: "Function", symbol, body } as Function;
+    return {
+      kind: "Function",
+      symbol,
+      body,
+      line: this.peek().line,
+    } as Function;
   }
 
   private parseBlockItem(): BlockItem {
@@ -226,11 +245,13 @@ export class Parser {
         return {
           kind: "DBlock",
           declaration: this.parseDeclaration(),
+          line: this.peek().line,
         } as DBlock;
       default:
         return {
           kind: "SBlock",
           statement: this.parseStatement(),
+          line: this.peek().line,
         } as SBlock;
     }
   }
@@ -241,9 +262,9 @@ export class Parser {
     const decl = {
       kind: "Declaration",
       symbol: ident.value,
+      line: this.peek().line,
     } as Declaration;
-    if (this.peek().type == TokenType.Equal) {
-      this.consume();
+    if (this.isNext(TokenType.Equal, true)) {
       decl.expr = this.parseExpr();
     }
     this.expect(TokenType.Semicolon);
@@ -251,38 +272,38 @@ export class Parser {
   }
 
   private parseStatement(): Statement {
-    const type = this.peek().type;
+    const token = this.peek();
 
-    switch (type) {
+    switch (token.type) {
       case TokenType.Return: {
         this.consume();
         const expr = this.parseExpr();
         this.expect(TokenType.Semicolon);
-        return { kind: "Return", value: expr } as ReturnStatement;
+        return {
+          kind: "Return",
+          value: expr,
+          line: token.line,
+        } as ReturnStatement;
       }
       case TokenType.Semicolon:
         this.consume();
-        return { kind: "Null" } as Null;
+        return { kind: "Null", line: token.line } as Null;
       case TokenType.If: {
         this.consume();
         this.expect(TokenType.OpenParenthesis);
         const condition = this.parseExpr();
         this.expect(TokenType.CloseParenthesis);
-        //this.expect(TokenType.OpenBrace);
         const body = this.parseStatement();
-        //this.expect(TokenType.CloseBrace);
 
         const ifStatement = {
           kind: "If",
           condition,
           then: body,
+          line: token.line,
         } as IfStatement;
 
-        if (this.peek().type == TokenType.Else) {
-          this.consume();
-          //this.expect(TokenType.OpenBrace);
+        if (this.isNext(TokenType.Else, true)) {
           ifStatement.else = this.parseStatement();
-          //this.expect(TokenType.CloseBrace);
         }
         return ifStatement;
       }
@@ -291,9 +312,10 @@ export class Parser {
         const compound = {
           kind: "Compound",
           block: { kind: "Block", blockItems: [] },
+          line: token.line,
         } as CompoundStatement;
 
-        while (this.peek().type != TokenType.CloseBrace) {
+        while (!this.isNext(TokenType.CloseBrace)) {
           compound.block.blockItems.push(this.parseBlockItem());
         }
         this.consume();
@@ -303,6 +325,7 @@ export class Parser {
         const expr = {
           kind: "Expression",
           expr: this.parseExpr(),
+          line: token.line,
         } as ExpressionStatement;
         this.expect(TokenType.Semicolon);
         return expr;
@@ -320,19 +343,21 @@ export class Parser {
       this.precedence(this.nextBinOp(false)) >= minimumPrecedence
     ) {
       // Assignments are right associative and need to be handled slightly differently
-      if (this.peek().type == TokenType.Equal) {
+      if (this.isNext(TokenType.Equal)) {
+        const line = this.peek().line;
         const right = this.parseExpr(this.precedence(this.nextBinOp(true)));
         left = {
           kind: "Assignment",
           left,
           right,
+          line,
         } as Assignment;
         continue;
       }
 
       // Ternary operators
-      if (this.peek().type == TokenType.Question) {
-        this.consume();
+      if (this.isNext(TokenType.Question, true)) {
+        const line = this.peek().line;
         const middle = this.parseExpr();
         this.expect(TokenType.Colon);
         const falseTrack = this.parseExpr(
@@ -343,10 +368,12 @@ export class Parser {
           condition: left,
           ifTrue: middle,
           ifFalse: falseTrack,
+          line,
         } as ConditionalExpr;
         continue;
       }
 
+      const line = this.peek().line;
       const operator = this.nextBinOp(true);
       const right = this.parseExpr(this.precedence(operator) + 1);
       left = {
@@ -354,64 +381,67 @@ export class Parser {
         operator,
         left,
         right,
+        line,
       } as BinaryExpr;
     }
     return left;
   }
 
   private parseFactor(): Factor {
-    const type = this.peek().type;
-    switch (type) {
+    const token = this.consume();
+    switch (token.type) {
       case TokenType.Identifier: {
-        const ident = this.consume();
         return {
           kind: "Variable",
-          symbol: ident.value,
+          symbol: token.value,
+          line: token.line,
         } as Variable;
       }
       case TokenType.Constant: {
-        const expr = this.consume();
         return {
           kind: "NumLiteral",
-          value: parseInt(expr.value),
+          value: parseInt(token.value),
+          line: token.line,
         } as NumLiteral;
       }
       case TokenType.OpenParenthesis: {
-        this.consume();
         const expr = this.parseExpr();
         this.expect(TokenType.CloseParenthesis);
         return expr;
       }
       case TokenType.Minus: {
-        this.consume();
         const expr = this.parseFactor();
         return {
           kind: "UnaryExpr",
           operator: UnaryOperator.Negation,
           expr,
+          line: token.line,
         } as UnaryExpr;
       }
       case TokenType.Tilde: {
-        this.consume();
         const expr = this.parseFactor();
         return {
           kind: "UnaryExpr",
           operator: UnaryOperator.Complement,
           expr,
+          line: token.line,
         } as UnaryExpr;
       }
       case TokenType.LogicalNot: {
-        this.consume();
         const expr = this.parseFactor();
         return {
           kind: "UnaryExpr",
           operator: UnaryOperator.Not,
           expr,
+          line: token.line,
         } as UnaryExpr;
       }
       default:
-        console.error("Unknown expression type:", TokenType[type]);
-        Deno.exit(1);
+        bail(
+          `ParseError on line ${token.line}: Unexpected expression type: ${
+            TokenType[token.type]
+          }`,
+        );
     }
 
     // NOTE: Unreachable, just to make the TS compiler happy
@@ -476,8 +506,9 @@ export class Parser {
       case TokenType.Question:
         return BinaryOperator.Ternary;
       default:
-        console.error("Expected binary operator:", token);
-        Deno.exit(1);
+        bail(
+          `ParseError on line ${token.line}: Expected binary operator, got: ${token}`,
+        );
     }
 
     // NOTE unreachable
@@ -505,8 +536,7 @@ export class Parser {
 
     const precedence = precedenceMap[operator];
     if (!precedence) {
-      console.error("Unsupported binary operator:", operator);
-      Deno.exit(1);
+      bail(`Unexpected binary operator: ${operator}`);
     }
     return precedence;
   }
