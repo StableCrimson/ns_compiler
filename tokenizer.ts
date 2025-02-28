@@ -103,349 +103,250 @@ const RESERVED_KEYWORDS: Record<string, TokenType> = {
 export type Token = {
   type: TokenType;
   value: string;
+  line?: number;
 };
 
-export function tokenize(input: string): Token[] {
-  let sourceCode = input.trim();
-  const tokens: Token[] = [];
+export class Lexer {
+  private line = 0;
+  private sourceCode = "";
+  private tokens: Token[] = [];
 
-  while (sourceCode.length > 0) {
-    // Preprocessor steps
-    // TODO: Will need to actually support this later
-    const preprocessorStatement = sourceCode.match(PREPROCESSOR_STATEMENT);
-    if (
-      preprocessorStatement &&
-      sourceCode.startsWith(preprocessorStatement[0])
-    ) {
-      sourceCode = sourceCode.slice(preprocessorStatement[0].length).trim();
-      continue;
-    }
+  public tokenize(input: string): Token[] {
+    this.sourceCode = input.trim();
+    this.line = 1;
+    this.tokens = [];
 
-    // Comments
-    const comment = sourceCode.match(COMMENT);
-
-    if (comment && sourceCode.startsWith(comment[0])) {
-      sourceCode = sourceCode.slice(comment[0].length).trim();
-      continue;
-    }
-
-    const blockComment = sourceCode.match(BLOCK_COMMENT);
-
-    if (blockComment && sourceCode.startsWith(blockComment[0])) {
-      sourceCode = sourceCode.slice(blockComment[0].length).trim();
-      continue;
-    }
-
-    // Identifiers and keywords
-    const ident = sourceCode.match(IDENTIFIER);
-
-    if (ident && sourceCode.startsWith(ident[0])) {
-      const token = {
-        type: RESERVED_KEYWORDS[ident[0]] ?? TokenType.Identifier,
-        value: ident[0],
-      };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(ident[0].length).trim();
-      continue;
-    }
-
-    // Constants
-    const constant = sourceCode.match(CONSTANT);
-
-    if (constant && sourceCode.startsWith(constant[0])) {
-      const token = { type: TokenType.Constant, value: constant[0] };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(constant[0].length).trim();
-      continue;
-    }
-
-    // Paranthesis
-    if (sourceCode[0] === "(") {
-      const token = { type: TokenType.OpenParenthesis, value: "(" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-    if (sourceCode[0] === ")") {
-      const token = { type: TokenType.CloseParenthesis, value: ")" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    // Brackets
-    if (sourceCode[0] === "[") {
-      const token = { type: TokenType.OpenBracket, value: "[" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-    if (sourceCode[0] === "]") {
-      const token = { type: TokenType.CloseBracket, value: "]" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    // Braces
-    if (sourceCode[0] === "{") {
-      const token = { type: TokenType.OpenBrace, value: "{" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-    if (sourceCode[0] === "}") {
-      const token = { type: TokenType.CloseBrace, value: "}" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    // Semicolon
-    if (sourceCode[0] === ";") {
-      const token = { type: TokenType.Semicolon, value: ";" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "?") {
-      const token = { type: TokenType.Question, value: "?" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-    if (sourceCode[0] === ":") {
-      const token = { type: TokenType.Colon, value: ":" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "~") {
-      const token = { type: TokenType.Tilde, value: "~" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "-") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.MinusEqual, value: "-=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
+    while (this.sourceCode.length > 0) {
+      while (this.sourceCode.startsWith("\n")) {
+        this.line++;
+        this.sourceCode = this.sourceCode.slice(1);
       }
-      if (sourceCode[1] === "-") {
-        const token = { type: TokenType.Decrement, value: "--" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
+      this.sourceCode = this.sourceCode.trim();
+
+      // Preprocessor steps
+      this.sourceCode = this.sourceCode.trim();
+      // TODO: Will need to actually support this later
+      const preprocessorStatement = this.sourceCode.match(
+        PREPROCESSOR_STATEMENT,
+      );
+      if (
+        preprocessorStatement &&
+        this.sourceCode.startsWith(preprocessorStatement[0])
+      ) {
+        this.line += (preprocessorStatement[0].match(/\n/) || []).length;
+        this.sourceCode = this.sourceCode.slice(
+          preprocessorStatement[0].length,
+        );
         continue;
       }
 
-      const token = { type: TokenType.Minus, value: "-" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
+      // Comments
+      const comment = this.sourceCode.match(COMMENT);
+
+      if (comment && this.sourceCode.startsWith(comment[0])) {
+        this.line += (comment[0].match(/\n/) || []).length;
+        this.sourceCode = this.sourceCode.slice(comment[0].length);
+        continue;
+      }
+
+      const blockComment = this.sourceCode.match(BLOCK_COMMENT);
+
+      if (blockComment && this.sourceCode.startsWith(blockComment[0])) {
+        this.line += (blockComment[0].match(/\n/) || []).length;
+        this.sourceCode = this.sourceCode.slice(blockComment[0].length);
+        continue;
+      }
+
+      // Identifiers and keywords
+      const ident = this.sourceCode.match(IDENTIFIER);
+
+      if (ident && this.sourceCode.startsWith(ident[0])) {
+        const token = {
+          type: RESERVED_KEYWORDS[ident[0]] ?? TokenType.Identifier,
+          value: ident[0],
+          line: this.line,
+        };
+        this.tokens.push(token);
+        this.sourceCode = this.sourceCode.slice(ident[0].length).trim();
+        continue;
+      }
+
+      // Constants
+      const constant = this.sourceCode.match(CONSTANT);
+
+      if (constant && this.sourceCode.startsWith(constant[0])) {
+        const token = {
+          type: TokenType.Constant,
+          value: constant[0],
+          line: this.line,
+        };
+        this.tokens.push(token);
+        this.sourceCode = this.sourceCode.slice(constant[0].length).trim();
+        continue;
+      }
+
+      // Paranthesis
+      if (this.testToken("(", TokenType.OpenParenthesis)) {
+        continue;
+      }
+      if (this.testToken(")", TokenType.CloseParenthesis)) {
+        continue;
+      }
+
+      // Brackets
+      if (this.testToken("[", TokenType.OpenBracket)) {
+        continue;
+      }
+      if (this.testToken("]", TokenType.CloseBracket)) {
+        continue;
+      }
+
+      // Braces
+      if (this.testToken("{", TokenType.OpenBrace)) {
+        continue;
+      }
+      if (this.testToken("}", TokenType.CloseBrace)) {
+        continue;
+      }
+
+      if (this.testToken(";", TokenType.Semicolon)) {
+        continue;
+      }
+      if (this.testToken("?", TokenType.Question)) {
+        continue;
+      }
+      if (this.testToken(":", TokenType.Colon)) {
+        continue;
+      }
+      if (this.testToken("~", TokenType.Tilde)) {
+        continue;
+      }
+
+      // Minus Operators
+      if (this.testToken("--", TokenType.Decrement)) {
+        continue;
+      }
+      if (this.testToken("-=", TokenType.MinusEqual)) {
+        continue;
+      }
+      if (this.testToken("-", TokenType.Minus)) {
+        continue;
+      }
+
+      if (this.testToken("++", TokenType.Increment)) {
+        continue;
+      }
+      if (this.testToken("+=", TokenType.PlusEqual)) {
+        continue;
+      }
+      if (this.testToken("+", TokenType.Plus)) {
+        continue;
+      }
+
+      if (this.testToken("*=", TokenType.AsteriskEqual)) {
+        continue;
+      }
+      if (this.testToken("*", TokenType.Asterisk)) {
+        continue;
+      }
+
+      if (this.testToken("/=", TokenType.SlashEqual)) {
+        continue;
+      }
+      if (this.testToken("/", TokenType.ForwardSlash)) {
+        continue;
+      }
+
+      if (this.testToken("%=", TokenType.ModulusEqual)) {
+        continue;
+      }
+      if (this.testToken("%", TokenType.Modulus)) {
+        continue;
+      }
+
+      if (this.testToken("!=", TokenType.NotEqual)) {
+        continue;
+      }
+      if (this.testToken("!", TokenType.LogicalNot)) {
+        continue;
+      }
+
+      if (this.testToken("&&", TokenType.LogicalAnd)) {
+        continue;
+      }
+      if (this.testToken("&=", TokenType.AndEqual)) {
+        continue;
+      }
+      if (this.testToken("&", TokenType.BitwiseAnd)) {
+        continue;
+      }
+
+      if (this.testToken("||", TokenType.LogicalOr)) {
+        continue;
+      }
+      if (this.testToken("|=", TokenType.OrEqual)) {
+        continue;
+      }
+      if (this.testToken("|", TokenType.BitwiseOr)) {
+        continue;
+      }
+
+      if (this.testToken("^=", TokenType.XorEqual)) {
+        continue;
+      }
+      if (this.testToken("^", TokenType.BitwiseXor)) {
+        continue;
+      }
+
+      if (this.testToken(">>=", TokenType.RightShiftEqual)) {
+        continue;
+      }
+      if (this.testToken(">>", TokenType.RightShift)) {
+        continue;
+      }
+      if (this.testToken(">=", TokenType.GreaterThanEqual)) {
+        continue;
+      }
+      if (this.testToken(">", TokenType.GreaterThan)) {
+        continue;
+      }
+
+      if (this.testToken("<<=", TokenType.LeftShiftEqual)) {
+        continue;
+      }
+      if (this.testToken("<<", TokenType.LeftShift)) {
+        continue;
+      }
+      if (this.testToken("<=", TokenType.LessThanEqual)) {
+        continue;
+      }
+      if (this.testToken("<", TokenType.LessThan)) {
+        continue;
+      }
+
+      if (this.testToken("==", TokenType.DoubleEqual)) {
+        continue;
+      }
+      if (this.testToken("=", TokenType.Equal)) {
+        continue;
+      }
+
+      // We weren't able to match the current token, bail
+      bail(
+        `LexError: Unexpected token on line ${this.line}: ${this.sourceCode}`,
+      );
     }
 
-    if (sourceCode[0] === "+") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.PlusEqual, value: "+=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-      if (sourceCode[1] === "+") {
-        const token = { type: TokenType.Increment, value: "++" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-
-      const token = { type: TokenType.Plus, value: "+" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "*") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.AsteriskEqual, value: "*=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-      const token = { type: TokenType.Asterisk, value: "*" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "/") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.SlashEqual, value: "/=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-      const token = { type: TokenType.ForwardSlash, value: "/" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "%") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.ModulusEqual, value: "%=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-      const token = { type: TokenType.Modulus, value: "%" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "!") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.NotEqual, value: "!=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-
-      const token = { type: TokenType.LogicalNot, value: "!" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "&") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.AndEqual, value: "&=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-      if (sourceCode[1] === "&") {
-        const token = { type: TokenType.LogicalAnd, value: "&&" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-
-      const token = { type: TokenType.BitwiseAnd, value: "&" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "|") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.OrEqual, value: "|=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-      if (sourceCode[1] === "|") {
-        const token = { type: TokenType.LogicalOr, value: "||" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-
-      const token = { type: TokenType.BitwiseOr, value: "|" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "^") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.XorEqual, value: "^=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-      const token = { type: TokenType.BitwiseXor, value: "^" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === ">") {
-      if (sourceCode[1] === ">") {
-        if (sourceCode[2] === "=") {
-          const token = { type: TokenType.RightShiftEqual, value: ">>=" };
-          tokens.push(token);
-          sourceCode = sourceCode.slice(3).trim();
-          continue;
-        }
-        const token = { type: TokenType.RightShift, value: ">>" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.GreaterThanEqual, value: ">=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-
-      const token = { type: TokenType.GreaterThan, value: ">" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "<") {
-      if (sourceCode[1] === "<") {
-        if (sourceCode[2] === "=") {
-          const token = { type: TokenType.LeftShiftEqual, value: "<<=" };
-          tokens.push(token);
-          sourceCode = sourceCode.slice(3).trim();
-          continue;
-        }
-        const token = { type: TokenType.LeftShift, value: "<<" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.LessThanEqual, value: "<=" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-
-      const token = { type: TokenType.LessThan, value: "<" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    if (sourceCode[0] === "=") {
-      if (sourceCode[1] === "=") {
-        const token = { type: TokenType.DoubleEqual, value: "==" };
-        tokens.push(token);
-        sourceCode = sourceCode.slice(2).trim();
-        continue;
-      }
-      const token = { type: TokenType.Equal, value: "=" };
-      tokens.push(token);
-      sourceCode = sourceCode.slice(1).trim();
-      continue;
-    }
-
-    // We weren't able to match the current token, bail
-    bail(`LexError: Unexpected token: ${sourceCode}`);
+    this.tokens.push({ type: TokenType.EOF, value: "End of file" });
+    return this.tokens;
   }
 
-  tokens.push({ type: TokenType.EOF, value: "End of file" });
-  return tokens;
+  private testToken(character: string, token: TokenType): boolean {
+    if (this.sourceCode.startsWith(character)) {
+      this.tokens.push({ type: token, value: character, line: this.line });
+      this.sourceCode = this.sourceCode.slice(character.length);
+      return true;
+    }
+    return false;
+  }
 }
