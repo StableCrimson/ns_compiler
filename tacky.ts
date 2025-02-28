@@ -33,24 +33,22 @@ type InstructionType =
   | "Return";
 type TasValueKind = "Constant" | "Variable";
 
-interface TasConstruct {}
-
-export interface TasProgram extends TasConstruct {
+export interface TasProgram {
   kind: "Program";
   body: TasFunction[];
 }
 
-export interface TasFunction extends TasConstruct {
+export interface TasFunction {
   kind: "Function";
   symbol: string;
   instructions: TasInstruction[];
 }
 
-export interface TasInstruction extends TasConstruct {
+export interface TasInstruction {
   kind: InstructionType;
 }
 
-export interface TasValue extends TasConstruct {
+export interface TasValue {
   kind: TasValueKind;
 }
 

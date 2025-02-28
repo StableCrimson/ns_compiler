@@ -49,20 +49,18 @@ type AsmInstructionKind =
 
 type AsmOperandKind = "Imm" | "PseudoReg" | "Stack" | "Reg";
 
-interface AsmConstruct {}
-
-export interface AsmProgram extends AsmConstruct {
+export interface AsmProgram {
   kind: "Program";
   body: AsmFunction[];
 }
 
-export interface AsmFunction extends AsmConstruct {
+export interface AsmFunction {
   kind: "Function";
   symbol: string;
   instructions: AsmInstruction[];
 }
 
-export interface AsmInstruction extends AsmConstruct {
+export interface AsmInstruction {
   kind: AsmInstructionKind;
 }
 
@@ -131,7 +129,7 @@ export interface Cmp extends AsmInstruction {
   b: AsmOperand;
 }
 
-export interface AsmOperand extends AsmConstruct {
+export interface AsmOperand {
   kind: AsmOperandKind;
 }
 
